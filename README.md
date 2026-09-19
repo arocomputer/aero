@@ -38,7 +38,7 @@ Composer.
 | ⌘T / ⌘W | new tab / close tab |
 | ⌘L | edit the address |
 | ⌘D | pin or unpin the current tab, also in the tab's context menu |
-| ⌘[ / ⌘] | back / forward, or swipe |
+| ⌘[ / ⌘] | back / forward, also the arrows in the strip, or swipe |
 | ⌘⇧[ / ⌘⇧] | previous / next tab |
 | ⌘1–⌘9 | jump to tab |
 | ⌘-click | open link in a background tab |

@@ -55,6 +55,8 @@ final class Tab: NSObject, WKNavigationDelegate, WKUIDelegate {
             webView.observe(\.isLoading) { [weak self] _, _ in self?.changed() },
             webView.observe(\.estimatedProgress) { [weak self] _, _ in self?.changed() },
             webView.observe(\.underPageBackgroundColor) { [weak self] _, _ in self?.changed() },
+            webView.observe(\.canGoBack) { [weak self] _, _ in self?.changed() },
+            webView.observe(\.canGoForward) { [weak self] _, _ in self?.changed() },
         ]
     }
 

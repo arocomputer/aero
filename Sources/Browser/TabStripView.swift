@@ -1,7 +1,8 @@
 import AppKit
 
-/// The single strip of chrome, filling the window's titlebar: pinned tabs as monograms, then tab pills,
-/// then a "+" that shows while the pointer is over the strip. Laid out by hand; empty areas drag the window.
+/// The single strip of chrome, filling the window's titlebar: a hairline after the traffic lights, the
+/// back and forward arrows, pinned tabs as monograms, then tab pills, then a "+" that shows while the
+/// pointer is over the strip. Laid out by hand; empty areas drag the window.
 /// Changes to the tabs animate: the active highlight slides between items, new ones slide in, the rest make room.
 /// It has no surface of its own: it shows `pageColor`, the color along the page's top edge, and its
 /// `appearance` is set light or dark to stay legible on it.
@@ -30,7 +31,10 @@ final class TabStripView: NSView {
     private var activeItem: NSView?
     /// What the last animated arrangement was made for; see `update`.
     private var arranged: [AnyHashable] = []
-    private let highlight = HighlightView()
+    private let highlight = TintView(opacity: 0.08, radius: Metrics.radius)
+    private let separator = TintView(opacity: 0.14, radius: 0)
+    private let backButton = StripButton(symbol: "chevron.backward", pointSize: 14, weight: .medium)
+    private let forwardButton = StripButton(symbol: "chevron.forward", pointSize: 14, weight: .medium)
     private let plusButton = StripButton(symbol: "plus", pointSize: 12)
 
     override init(frame: NSRect) {
@@ -38,6 +42,9 @@ final class TabStripView: NSView {
         wantsLayer = true
         addSubview(highlight)
 
+        backButton.onClick = { [weak self] in self?.controller?.goBackInHistory(nil) }
+        forwardButton.onClick = { [weak self] in self?.controller?.goForwardInHistory(nil) }
+        [separator, backButton, forwardButton].forEach(addSubview)
         plusButton.onClick = { [weak self] in self?.controller?.newTab(nil) }
         plusButton.alphaValue = 0
         addSubview(plusButton)
@@ -58,6 +65,8 @@ final class TabStripView: NSView {
         pinButtons = resized(pinButtons, to: pinned.count) { PinButton() }
         pills = resized(pills, to: ordinary.count) { TabPillView() }
         activeItem = nil
+        backButton.isEnabled = active?.webView.canGoBack ?? false
+        forwardButton.isEnabled = active?.webView.canGoForward ?? false
 
         for (button, tab) in zip(pinButtons, pinned) {
             button.letter = tab.monogram
@@ -109,8 +118,16 @@ final class TabStripView: NSView {
     /// never cuts an animation short.
     private func arrange(animated: Bool) {
         var targets: [(NSView, NSRect)] = []
-        var x = leadingInset
         let y = (bounds.height - Metrics.itemHeight) / 2
+        // The hairline sits between the traffic lights and the arrows; in full screen there are no lights.
+        separator.isHidden = leadingInset < 40
+        separator.frame = NSRect(x: leadingInset - 6, y: (bounds.height - 16) / 2, width: 1, height: 16)
+        var x = separator.isHidden ? leadingInset : leadingInset + 5
+        for arrow in [backButton, forwardButton] {
+            arrow.frame = NSRect(x: x, y: (bounds.height - Metrics.arrowSize) / 2, width: Metrics.arrowSize, height: Metrics.arrowSize)
+            x += Metrics.arrowSize + 2
+        }
+        x += 8
         for button in pinButtons {
             targets.append((button, NSRect(x: x, y: y, width: Metrics.pinWidth, height: Metrics.itemHeight)))
             x += Metrics.pinWidth + Metrics.gap
@@ -156,12 +173,16 @@ final class TabStripView: NSView {
     override func mouseExited(with event: NSEvent) { plusButton.animator().alphaValue = 0 }
 }
 
-/// The active tab's background, which slides between items.
-private final class HighlightView: NSView {
-    override init(frame: NSRect) {
-        super.init(frame: frame)
+/// A flat tint of the strip's text color that follows the strip's light or dark appearance: the active
+/// tab's background, which slides between items, and the hairline after the traffic lights.
+private final class TintView: NSView {
+    private let opacity: CGFloat
+
+    init(opacity: CGFloat, radius: CGFloat) {
+        self.opacity = opacity
+        super.init(frame: .zero)
         wantsLayer = true
-        layer?.cornerRadius = Metrics.radius
+        layer?.cornerRadius = radius
         layer?.cornerCurve = .continuous
     }
 
@@ -170,7 +191,7 @@ private final class HighlightView: NSView {
     override var wantsUpdateLayer: Bool { true }
 
     override func updateLayer() {
-        layer?.backgroundColor = NSColor.textColor.withAlphaComponent(0.08).cgColor
+        layer?.backgroundColor = NSColor.textColor.withAlphaComponent(opacity).cgColor
     }
 }
 
@@ -180,6 +201,7 @@ private enum Metrics {
     static let itemHeight: CGFloat = 30
     static let pillWidth: CGFloat = 208
     static let pinWidth: CGFloat = 32
+    static let arrowSize: CGFloat = 28
     static let gap: CGFloat = 3
     static let radius: CGFloat = 10
     static let titleFont = NSFont.systemFont(ofSize: 13)
@@ -326,17 +348,19 @@ final class PinButton: NSView {
     @objc private func unpinClicked() { onUnpin?() }
 }
 
-/// A small round symbol button for the strip, used for closing a tab and for the new-tab "+". It is a
-/// bare glyph; the gray disc shows only while the pointer is over the button itself.
+/// A small round symbol button for the strip, used for closing a tab, the new-tab "+" and the back and
+/// forward arrows. It is a bare glyph; the gray disc shows only while the pointer is over the button
+/// itself. Disabled, it dims and ignores the pointer.
 final class StripButton: NSView {
     var onClick: (() -> Void)?
+    var isEnabled = true { didSet { if isEnabled != oldValue { needsDisplay = true } } }
 
     private let icon: NSImageView
     private var isHovered = false { didSet { needsDisplay = true } }
 
-    init(symbol: String, pointSize: CGFloat) {
+    init(symbol: String, pointSize: CGFloat, weight: NSFont.Weight = .semibold) {
         let image = NSImage(systemSymbolName: symbol, accessibilityDescription: symbol)!
-            .withSymbolConfiguration(.init(pointSize: pointSize, weight: .semibold))!
+            .withSymbolConfiguration(.init(pointSize: pointSize, weight: weight))!
         icon = NSImageView(image: image)
         super.init(frame: .zero)
         wantsLayer = true
@@ -355,8 +379,8 @@ final class StripButton: NSView {
     override func hitTest(_ point: NSPoint) -> NSView? { super.hitTest(point) == nil ? nil : self }
 
     override func updateLayer() {
-        layer?.backgroundColor = NSColor.textColor.withAlphaComponent(isHovered ? 0.12 : 0).cgColor
-        icon.contentTintColor = NSColor.textColor.withAlphaComponent(0.5)
+        layer?.backgroundColor = NSColor.textColor.withAlphaComponent(isHovered && isEnabled ? 0.12 : 0).cgColor
+        icon.contentTintColor = NSColor.textColor.withAlphaComponent(isEnabled ? 0.6 : 0.2)
     }
 
     override func layout() {
@@ -372,6 +396,6 @@ final class StripButton: NSView {
     override func mouseDown(with event: NSEvent) {}
 
     override func mouseUp(with event: NSEvent) {
-        if bounds.contains(convert(event.locationInWindow, from: nil)) { onClick?() }
+        if isEnabled, bounds.contains(convert(event.locationInWindow, from: nil)) { onClick?() }
     }
 }
