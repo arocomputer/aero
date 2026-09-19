@@ -1,5 +1,5 @@
 #!/bin/sh
-# Puts the app icon into a bundle's Resources folder: icon.sh <aero.icon> <Resources dir>
+# Puts the app icon into a bundle's Resources folder: icon.sh <app.icon> <Resources dir>
 #
 # Apple's route is to compile the Icon Composer file with actool, which ships in Xcode. That produces
 # Assets.car, from which macOS renders the Default, Dark, Clear and Tinted looks itself. Without Xcode

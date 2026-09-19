@@ -44,7 +44,7 @@ place. `./x test` runs the unit tests. `./x app` builds the release bundle, fill
 Required checks are `Validate` from Quality and `Build and Test` from App. Keep those
 names aligned with repository rules.
 
-The icon is `Sources/UI/aero.icon`, an Icon Composer document. That format is a
+The icon is `Sources/UI/app.icon`, an Icon Composer document. That format is a
 folder holding `icon.json` and its artwork; Finder shows it as one file. With Xcode installed, `scripts/icon.sh`
 compiles it with `actool` into `Assets.car`, and macOS renders the Default, Dark, Clear and Tinted looks.
 Without Xcode it renders a plain `.icns` of the Default look with Icon Composer's `ictool`.
@@ -60,7 +60,7 @@ Sources/Core/                   entry point, menus, app paths, addresses and his
 Sources/Downloads/              WebKit downloads, destinations and current-session state
 Sources/Extensions/             catalog, installed WebExtensions, permissions, actions and popups
 Sources/UI/                     windows, tab strip, address field and app icon
-  aero.icon/                    Icon Composer source for the app icon; excluded from the target
+  app.icon/                     Icon Composer source for the app icon; excluded from the target
 Sources/Website/                web views, page-edge color sampling, pins and reload hold
 Tests/                          focused unit tests, grouped like the source tree
 scripts/                        guard, commit hooks and their tests, icon packaging
