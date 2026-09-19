@@ -17,6 +17,9 @@ final class Tab: NSObject, WKNavigationDelegate, WKUIDelegate {
     /// A restored pinned tab waits here until it is first selected, so launch stays cheap.
     private var pendingURL: URL?
 
+    /// Set while a reload is being hidden; see `reload`.
+    private var reloadHold: ReloadHold?
+
     /// Follows what the page shows along its top edge, for `chromeColor`.
     private(set) lazy var edge = PageEdge(
         isLoading: { [weak webView] in webView?.isLoading ?? false },
@@ -88,7 +91,23 @@ final class Tab: NSObject, WKNavigationDelegate, WKUIDelegate {
     /// declared theme color, which sites often set to a brand color that matches nothing under the strip.
     /// Nil while the tab is blank.
     var chromeColor: NSColor? {
-        isBlank ? nil : edge.color ?? webView.underPageBackgroundColor?.withAlphaComponent(1)
+        if let reloadHold { return reloadHold.chromeColor }
+        return isBlank ? nil : edge.color ?? webView.underPageBackgroundColor?.withAlphaComponent(1)
+    }
+
+    /// Reloads the page so that nothing appears to move, and the strip keeps its color meanwhile; see
+    /// `ReloadHold`. A tab that is hidden or has no page reloads plainly.
+    func reload() {
+        guard reloadHold == nil, !isBlank, webView.url != nil, webView.window != nil else { return _ = webView.reload() }
+        let release = { [weak self] in
+            guard let self else { return }
+            reloadHold = nil
+            owner?.tabChromeDidChange(self)
+        }
+        ReloadHold.begin(in: webView, chromeColor: chromeColor, onEnd: release) { [weak self] hold in
+            self?.reloadHold = hold
+            self?.webView.reload()
+        }
     }
 
     /// A tab's first page fades in once it commits, instead of popping in over the address field.
@@ -134,6 +153,7 @@ final class Tab: NSObject, WKNavigationDelegate, WKUIDelegate {
 
     private func showError(_ error: Error) {
         reveal()
+        reloadHold?.end()
         let error = error as NSError
         let cancelled = error.domain == NSURLErrorDomain && error.code == NSURLErrorCancelled
         let interruptedByPolicy = error.domain == "WebKitErrorDomain" && error.code == 102
@@ -176,6 +196,7 @@ final class Tab: NSObject, WKNavigationDelegate, WKUIDelegate {
         if let url = webView.url { History.shared.visit(url) }
         edge.reset()
         reveal()
+        reloadHold?.pageCommitted()
     }
 
     func webView(_ webView: WKWebView, didFailProvisionalNavigation navigation: WKNavigation!, withError error: Error) {

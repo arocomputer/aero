@@ -195,7 +195,7 @@ final class BrowserWindowController: NSWindowController, NSWindowDelegate {
         omnibox.present(text: text, overPage: !active.isBlank)
     }
 
-    @objc func reloadPage(_ sender: Any?) { active?.webView.reload() }
+    @objc func reloadPage(_ sender: Any?) { active?.reload() }
     @objc func stopLoadingPage(_ sender: Any?) { active?.webView.stopLoading() }
     @objc func goBackInHistory(_ sender: Any?) { active?.webView.goBack() }
     @objc func goForwardInHistory(_ sender: Any?) { active?.webView.goForward() }
