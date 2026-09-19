@@ -9,9 +9,9 @@
 	<key>CFBundleExecutable</key>
 	<string>__NAME__</string>
 	<key>CFBundleIconFile</key>
-	<string>aero</string>
+	<string>app</string>
 	<key>CFBundleIconName</key>
-	<string>aero</string>
+	<string>app</string>
 	<key>CFBundlePackageType</key>
 	<string>APPL</string>
 	<key>CFBundleShortVersionString</key>

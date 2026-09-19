@@ -1,4 +1,11 @@
-# Aero
+<p align="center">
+  <a href="https://aero.aro.computer">
+  <picture>
+    <source media="(prefers-color-scheme: dark)" srcset="assets/dark.svg">
+    <img src="assets/light.svg" alt="Aero logo" height="42">
+  </picture>
+  </a>
+</p>
 
 Aero is a small, fast macOS browser. It is a native AppKit shell around the system's
 WebKit, with no package dependencies. The executable is under 1 MB.
@@ -30,7 +37,7 @@ Xcode is not required.
 
 The product name lives in one place, `NAME` in `x`.
 
-The app icon is `Sources/UI/aero.icon`, an Icon Composer document. With Xcode installed the build
+The app icon is `Sources/UI/app.icon`, an Icon Composer document. With Xcode installed the build
 compiles it with `actool`, and macOS renders its Default, Dark, Clear and Tinted looks.
 Without Xcode it falls back to a plain `.icns` of the Default look, rendered by Icon
 Composer.

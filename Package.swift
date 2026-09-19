@@ -9,7 +9,7 @@ let package = Package(
         .executableTarget(
             name: "Browser",
             path: "Sources",
-            exclude: ["UI/aero.icon"],
+            exclude: ["UI/app.icon"],
             resources: [.copy("Extensions/Extensions.html"), .copy("UI/Settings.html")],
             swiftSettings: [.swiftLanguageMode(.v5)]),
         .testTarget(
