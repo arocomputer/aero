@@ -13,7 +13,7 @@ body:
     id: alternatives
     attributes:
       label: Existing options
-      description: What have you tried with what Aro already does? Aro stays small; say why this belongs in it.
+      description: What have you tried with what Aero already does? Aero stays small; say why this belongs in it.
     validations:
       required: true
   - type: textarea

@@ -1,13 +1,14 @@
-# Working on Aro
+# Working on Aero
 
 Instructions for agents and contributors editing this repository. Read
 [CONTRIBUTING.md](CONTRIBUTING.md) for contribution and AI/LLM rules.
 
-Aro is a small, fast macOS browser. It is a native AppKit shell around the system's
+Aero is a small, fast macOS browser. It is a native AppKit shell around the system's
 WebKit, with no package dependencies. Its interface is one strip holding the traffic
 lights, pinned tabs and tabs. There is no address bar; a centered field appears on a new
-tab and on Command-L. Capitalize Aro in prose. The Swift module is `Browser`, so a
-rename never touches the sources.
+tab and on Command-L. Aero is the browser and Aro is the company that makes it; the
+repository is `arocomputer/aro`. Capitalize both in prose. The Swift module is `Browser`,
+so a rename never touches the sources.
 
 ## Working style
 
@@ -29,10 +30,10 @@ rename never touches the sources.
 ```sh
 ./x hooks      # once per contributing checkout or worktree
 ./x check      # format lint, warnings as errors, guard, hook tests, unit tests
-./x run        # build build/Aro.app and open it
+./x run        # build build/Aero.app and open it
 ```
 
-Aro needs macOS 14 or newer and a Swift 6 toolchain. The Command Line Tools are enough;
+Aero needs macOS 14 or newer and a Swift 6 toolchain. The Command Line Tools are enough;
 Xcode is not required. Python 3 runs repository tooling. CI runs the same `./x` commands
 on macOS.
 
@@ -56,6 +57,7 @@ Nobody has run the `actool` path yet. CI has Xcode, so it will be the first to t
 Package.swift                   one executable target, Browser, and its tests
 Info.plist                      bundle template; ./x app fills __NAME__ and __BUNDLE_ID__
 x                               contributor and CI commands; also holds the product name
+Sources/Website/                the website; not a Swift target, so SwiftPM ignores it
 Sources/Browser/
   AppDelegate.swift             entry point, menu, addresses opened by other apps
   BrowserWindowController.swift window, tabs, pins, menu actions, chrome color, traffic lights
@@ -92,15 +94,15 @@ not raise test windows over their work without asking.
 ## App boundaries
 
 - The engine is the system's WebKit. How fast a page renders and scrolls is WebKit's
-  doing. Before blaming Aro for a slow page, compare Safari and a bare `WKWebView` in a
+  doing. Before blaming Aero for a slow page, compare Safari and a bare `WKWebView` in a
   plain window on the same Mac. If those are slow too, no change here will fix it.
-- Aro runs one script inside pages, the top-edge probe in `PageEdge.swift`. Anything that
+- Aero runs one script inside pages, the top-edge probe in `PageEdge.swift`. Anything that
   runs inside a page or makes it paint costs the page. The probe runs on load, resize and
   scroll, at most ten times a second, and never listens to animations. A pixel snapshot
   freezes the page while it paints, up to half a second on a page full of canvases, so
   each painted element gets one per page, after loading, while nothing scrolls. Change
   these limits only with measurements.
-- Aro has no package dependencies, and `scripts/guard.py` enforces it. It uses no private
+- Aero has no package dependencies, and `scripts/guard.py` enforces it. It uses no private
   WebKit API today. Adding either needs a stated reason, evidence that it helps, and for
   private API a run-time lookup that does nothing when the method is gone.
 - The strip has no surface of its own. It takes its color from what touches the page's

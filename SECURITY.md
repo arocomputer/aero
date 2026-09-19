@@ -14,27 +14,27 @@ report. Do not assume a response deadline or a bounty program.
 
 ## Supported versions
 
-Aro has not made its first release. Report findings against current main or an open PR.
+Aero has not made its first release. Report findings against current main or an open PR.
 
 ## Security boundaries
 
-Aro does not render pages. The system's WebKit loads, runs, and draws them in its own
+Aero does not render pages. The system's WebKit loads, runs, and draws them in its own
 sandboxed processes, and WebKit's fixes arrive with macOS updates. A flaw in page
 rendering, JavaScript, TLS, or the WebKit sandbox belongs to
 [Apple](https://support.apple.com/102549), not here.
 
-Aro's own code decides what to load and what to keep:
+Aero's own code decides what to load and what to keep:
 
 - It turns typed text into an address or a web search. It loads `http`, `https`,
   `file` and `about` addresses; anything else becomes a search.
-- When a person clicks a link with another scheme, such as `mailto:`, Aro hands it to
+- When a person clicks a link with another scheme, such as `mailto:`, Aero hands it to
   macOS. It does not do that for navigations a page starts by itself.
 - It injects one script into each page's main frame. The script reads computed styles
   at the top edge of the page and sends back a color or a short tag. It sends nothing
   else, and the native side treats the message as untrusted text.
 - It stores visited addresses and titles in a local SQLite file under
   `~/Library/Application Support/`, readable by the user's account. Search result pages
-  are not stored. Nothing is uploaded, and Aro has no telemetry.
+  are not stored. Nothing is uploaded, and Aero has no telemetry.
 - It registers as a handler for `http` and `https`, so other apps can ask it to open
   addresses.
 - It allows plain `http` pages to load, as browsers do.
@@ -51,7 +51,7 @@ library or containing search result pages, and an address shown in the strip or 
 that differs from the page loaded.
 
 A page behaving badly inside its own tab, in a way Safari shares, is not by itself an
-Aro vulnerability. An implementation that violates the boundaries above is still a
+Aero vulnerability. An implementation that violates the boundaries above is still a
 valid report.
 
 ## Automation review

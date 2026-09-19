@@ -6,7 +6,7 @@ cd "$(dirname "$0")"
 # The product name lives here and nowhere else: it names the bundle and fills Info.plist, and the code
 # reads it back from the bundle. BUNDLE_ID also names the history folder, so keep it when renaming
 # unless a fresh profile is wanted.
-NAME=Aro
+NAME=Aero
 BUNDLE_ID=com.fschrhunt.aro
 APP=build/$NAME.app
 SOURCES="Sources Tests Package.swift"

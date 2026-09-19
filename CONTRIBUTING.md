@@ -1,6 +1,6 @@
-# Contributing to Aro
+# Contributing to Aero
 
-Aro is a small, fast macOS browser built on the system's WebKit. Good contributions
+Aero is a small, fast macOS browser built on the system's WebKit. Good contributions
 solve a concrete browsing need, keep the app small, and leave the code easy to
 understand and verify. Explain why a change needs a new dependency, setting, or
 abstraction before adding one.
@@ -14,7 +14,7 @@ cd aro
 ./x run
 ```
 
-Aro needs macOS 14 or newer and a Swift 6 toolchain. The Command Line Tools are enough.
+Aero needs macOS 14 or newer and a Swift 6 toolchain. The Command Line Tools are enough.
 Install Python 3 for repository tooling. Contributors using the managed `~/Code`
 collection should follow its README and use a worktree.
 
@@ -37,11 +37,11 @@ committed diff, so local hooks are not the only verification.
 Use the [bug or feature forms](https://github.com/arocomputer/aro/issues/new/choose).
 A bug report needs steps, expected and actual behavior, and the affected version or
 commit. For a page that misbehaves, give a public address and say whether Safari does
-the same; Aro uses the same engine, and a problem Safari shares is WebKit's. For slow or
+the same; Aero uses the same engine, and a problem Safari shares is WebKit's. For slow or
 uneven scrolling, include the Mac model, the display and its scaling, and the pointing
 device.
 
-Feature requests should start with what you are trying to do. Aro stays small, so
+Feature requests should start with what you are trying to do. Aero stays small, so
 explain why the feature belongs in it.
 
 Report security-sensitive findings privately using [SECURITY.md](SECURITY.md). Never
@@ -70,7 +70,7 @@ appearance or motion changes. Do not weaken an assertion to make a regression pa
 Update comments and guides with code changes.
 
 Include the setup and before and after measurements when claiming a speed improvement.
-Aro has no performance budgets or benchmark CI gate. Do not commit benchmark code; it
+Aero has no performance budgets or benchmark CI gate. Do not commit benchmark code; it
 belongs in the PR description.
 
 ## Review
@@ -118,7 +118,7 @@ authoritative account of each rule; use Git history for past decisions.
 
 ## Releases
 
-Aro is in development and has made no release. Commits and pull requests do not
+Aero is in development and has made no release. Commits and pull requests do not
 authorize one. Builds are signed ad hoc, which is enough to run locally and not enough
 to distribute; a release needs a Developer ID signature and notarization first.
 
@@ -144,7 +144,7 @@ empty groups.
 ```markdown
 ### Release title
 
-A short explanation of the changes that matter to people using Aro.
+A short explanation of the changes that matter to people using Aero.
 
 ### New features
 - Describe the new capability and how to reach it.
