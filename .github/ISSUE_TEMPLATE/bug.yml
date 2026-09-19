@@ -1,0 +1,39 @@
+name: Bug
+description: Report incorrect behavior in Aro.
+labels: [bug]
+body:
+  - type: markdown
+    attributes:
+      value: Report security-sensitive findings privately using our [security policy](https://github.com/fschrhunt/aro/blob/main/SECURITY.md). Remove private addresses, page content, and history from screenshots and logs.
+  - type: textarea
+    id: behavior
+    attributes:
+      label: What happened?
+      description: Include expected behavior, actual behavior, and relevant errors.
+    validations:
+      required: true
+  - type: textarea
+    id: reproduce
+    attributes:
+      label: Reproduction
+      description: Give the steps and, where a page is involved, a public address that shows the problem. Say whether Safari behaves the same way; Aro uses the same engine.
+    validations:
+      required: true
+  - type: input
+    id: version
+    attributes:
+      label: Version or commit
+    validations:
+      required: true
+  - type: textarea
+    id: environment
+    attributes:
+      label: Environment
+      description: Include the macOS version, the Mac model, the display and its scaling, and the pointing device.
+    validations:
+      required: true
+  - type: textarea
+    id: evidence
+    attributes:
+      label: Screenshots or recordings
+      description: Attach a screenshot, screen recording, or relevant log excerpt after checking it for private information.

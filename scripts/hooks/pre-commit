@@ -1,0 +1,8 @@
+#!/bin/sh
+# Preserve existing checks, then inspect staged content without touching the worktree.
+set -eu
+previous=$(git config --get aro.previousPreCommit || true)
+if [ -n "$previous" ] && [ -x "$previous" ]; then
+  "$previous" "$@"
+fi
+exec python3 scripts/hooks/check.py

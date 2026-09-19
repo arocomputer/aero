@@ -1,0 +1,23 @@
+name: Feature
+description: Describe a browsing need.
+labels: [enhancement]
+body:
+  - type: textarea
+    id: problem
+    attributes:
+      label: What problem does this solve?
+      description: Describe what you are trying to do in the browser before proposing an implementation.
+    validations:
+      required: true
+  - type: textarea
+    id: alternatives
+    attributes:
+      label: Existing options
+      description: What have you tried with what Aro already does? Aro stays small; say why this belongs in it.
+    validations:
+      required: true
+  - type: textarea
+    id: sketch
+    attributes:
+      label: Proposed behavior
+      description: A sketch of the interaction or a reference from another browser is welcome but optional.
