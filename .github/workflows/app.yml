@@ -22,5 +22,5 @@ jobs:
       - run: ./x app
       - name: Verify the bundle
         run: |
-          codesign --verify --deep build/Aro.app
-          test -f build/Aro.app/Contents/Resources/AppIcon.icns
+          codesign --verify --deep build/Aero.app
+          test -f build/Aero.app/Contents/Resources/AppIcon.icns

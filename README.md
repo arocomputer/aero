@@ -1,6 +1,6 @@
-# Aro
+# Aero
 
-Aro is a small, fast macOS browser. It is a native AppKit shell around the system's
+Aero is a small, fast macOS browser. It is a native AppKit shell around the system's
 WebKit, with no package dependencies. The app is about 1 MB.
 
 - The whole interface is one strip with the traffic lights, pinned tabs and tabs.
@@ -12,15 +12,15 @@ WebKit, with no package dependencies. The app is about 1 MB.
 - Reload keeps your place. The page stays still and the strip keeps its color while the new
   copy loads, then the two are lined up before you see it.
 
-Aro is early in development.
+Aero is early in development.
 
 ## Build
 
-Aro needs macOS 14 or newer and a Swift 6 toolchain. The Command Line Tools are enough;
+Aero needs macOS 14 or newer and a Swift 6 toolchain. The Command Line Tools are enough;
 Xcode is not required.
 
 ```sh
-./x run      # build build/Aro.app and open it
+./x run      # build build/Aero.app and open it
 ./x check    # format lint, warnings as errors, guard, hook tests, unit tests
 ```
 
@@ -48,8 +48,8 @@ removes it, and Esc dismisses.
 
 ## What to expect
 
-Aro renders pages with the same engine as Safari. A page that is slow in Safari is slow
-in Aro, and Chrome extensions do not work. History stays in
+Aero renders pages with the same engine as Safari. A page that is slow in Safari is slow
+in Aero, and Chrome extensions do not work. History stays in
 `~/Library/Application Support/<bundle id>/history.sqlite` and nothing leaves your Mac.
 
 ## Contributing
@@ -58,4 +58,4 @@ in Aro, and Chrome extensions do not work. History stays in
 [CONTRIBUTING.md](CONTRIBUTING.md) covers checks, review and releases. Report
 security-sensitive findings through [SECURITY.md](SECURITY.md).
 
-Aro is released under the [MIT license](LICENSE).
+Aero is released under the [MIT license](LICENSE).

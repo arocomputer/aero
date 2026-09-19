@@ -1,5 +1,5 @@
 name: Bug
-description: Report incorrect behavior in Aro.
+description: Report incorrect behavior in Aero.
 labels: [bug]
 body:
   - type: markdown
@@ -16,7 +16,7 @@ body:
     id: reproduce
     attributes:
       label: Reproduction
-      description: Give the steps and, where a page is involved, a public address that shows the problem. Say whether Safari behaves the same way; Aro uses the same engine.
+      description: Give the steps and, where a page is involved, a public address that shows the problem. Say whether Safari behaves the same way; Aero uses the same engine.
     validations:
       required: true
   - type: input
