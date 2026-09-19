@@ -1,8 +1,8 @@
 <p align="center">
   <a href="https://aero.aro.computer">
   <picture>
-    <source media="(prefers-color-scheme: dark)" srcset="assets/dark.svg">
-    <img src="assets/light.svg" alt="Aero logo" height="42">
+    <source media="(prefers-color-scheme: dark)" srcset="Assets/Logo/Dark.svg">
+    <img src="Assets/Logo/Light.svg" alt="Aero logo" height="42">
   </picture>
   </a>
 </p>
