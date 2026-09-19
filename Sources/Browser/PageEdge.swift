@@ -117,7 +117,9 @@ final class EdgeChangeRouter: NSObject, WKScriptMessageHandler {
     /// five points across the edge the script finds the element whose background shows there, and only
     /// two kinds can set the color. A pinned element, fixed or sticky, stays put while the page scrolls:
     /// a sticky header, or an app's sidebar. A plain colored column with a pinned layer in front of it
-    /// counts too, which is how GitHub builds its sidebar; an invisible layer, like its loading bar, does not. A band spans nearly the full width: a hero, a full-bleed
+    /// counts too, which is how GitHub builds its sidebar. An invisible layer does not count, and neither
+    /// does anything less than 12px tall at the edge: a site's loading bar is pinned and full width, and
+    /// would otherwise turn the strip its color whenever a page loads slowly. A band spans nearly the full width: a hero, a full-bleed
     /// section, often just the page's backdrop. Pinned beats scrolling, a band beats a column, then the
     /// wider wins. Anything else, a card or a column passing by, leaves the page's own background.
     ///
@@ -165,6 +167,9 @@ final class EdgeChangeRouter: NSObject, WKScriptMessageHandler {
                     return { answer, width, stays, isPainted };
                 };
                 for (const element of document.elementsFromPoint(x, 1)) {
+                    // A sliver along the edge, a loading bar or an accent stripe, is not the top of the page.
+                    const box = element.getBoundingClientRect();
+                    if (box.bottom - Math.max(box.top, 0) < 12) continue;
                     if (element.tagName === 'VIDEO') return null;
                     if (painted.test(element.tagName)) return result(unknown(element), element, true);
                     const style = getComputedStyle(element);
