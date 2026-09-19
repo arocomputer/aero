@@ -1,15 +1,21 @@
 import AppKit
+import AuthenticationServices
 import WebKit
 
 /// One browser tab. Owns its web view, records visits to history, and tells its window controller
 /// whenever title, URL or loading state change. A tab is "blank" until its first navigation.
 /// Its `chromeColor` follows what the page shows along its top edge.
 /// A pinned tab shows as a monogram in the strip, can't be closed, and comes back on the next launch.
-final class Tab: NSObject, WKNavigationDelegate, WKUIDelegate {
+final class Tab: NSObject, WKNavigationDelegate, WKUIDelegate, WKWebExtensionTab {
     let webView: WKWebView
     weak var owner: BrowserWindowController?
     private(set) var isBlank: Bool
+    /// Text left unfinished in this tab's address field. The window reuses one field across tabs.
+    var omniboxDraft = ""
+    /// Whether this tab should show the address field when selected.
+    var isOmniboxOpen: Bool
     private var observations: [NSKeyValueObservation] = []
+    private var authenticationRequest: ASWebAuthenticationSessionRequest?
 
     /// The address this tab was pinned at, restored on launch; nil for ordinary tabs.
     var pinnedURL: URL?
@@ -39,7 +45,8 @@ final class Tab: NSObject, WKNavigationDelegate, WKUIDelegate {
     /// such tabs are never blank because WebKit starts their load itself.
     init(configuration: WKWebViewConfiguration? = nil) {
         isBlank = configuration == nil
-        webView = WKWebView(frame: .zero, configuration: configuration ?? Tab.defaultConfiguration())
+        isOmniboxOpen = configuration == nil
+        webView = WKWebView(frame: .zero, configuration: configuration ?? Tab.configuration())
         webView.allowsBackForwardNavigationGestures = true
         webView.allowsMagnification = true
         #if DEBUG
@@ -51,8 +58,8 @@ final class Tab: NSObject, WKNavigationDelegate, WKUIDelegate {
 
         observations = [
             webView.observe(\.title) { [weak self] _, _ in self?.titleChanged() },
-            webView.observe(\.url) { [weak self] _, _ in self?.changed() },
-            webView.observe(\.isLoading) { [weak self] _, _ in self?.changed() },
+            webView.observe(\.url) { [weak self] _, _ in self?.changed([.URL]) },
+            webView.observe(\.isLoading) { [weak self] _, _ in self?.changed([.loading]) },
             webView.observe(\.estimatedProgress) { [weak self] _, _ in self?.changed() },
             webView.observe(\.underPageBackgroundColor) { [weak self] _, _ in self?.changed() },
             webView.observe(\.canGoBack) { [weak self] _, _ in self?.changed() },
@@ -64,6 +71,7 @@ final class Tab: NSObject, WKNavigationDelegate, WKUIDelegate {
     convenience init(pinnedAt url: URL) {
         self.init()
         isBlank = false
+        isOmniboxOpen = false
         pinnedURL = url
         pendingURL = url
     }
@@ -116,7 +124,36 @@ final class Tab: NSObject, WKNavigationDelegate, WKUIDelegate {
     func load(_ url: URL) {
         if webView.url == nil { webView.alphaValue = 0 }
         isBlank = false
+        isOmniboxOpen = false
+        omniboxDraft = ""
         webView.load(URLRequest(url: url))
+    }
+
+    /// Loads one authentication request, including headers that apply only to its first navigation.
+    func loadAuthentication(_ request: ASWebAuthenticationSessionRequest) {
+        authenticationRequest = request
+        isBlank = false
+        isOmniboxOpen = false
+        var urlRequest = URLRequest(url: request.url)
+        request.additionalHeaderFields?.forEach { urlRequest.setValue($1, forHTTPHeaderField: $0) }
+        webView.load(urlRequest)
+    }
+
+    var authenticationRequestID: UUID? { authenticationRequest?.uuid }
+
+    /// Cancels an unfinished authentication request because its tab was closed by the user.
+    func cancelAuthentication() {
+        guard let request = authenticationRequest else { return }
+        authenticationRequest = nil
+        request.cancelWithError(
+            NSError(
+                domain: ASWebAuthenticationSessionError.errorDomain,
+                code: ASWebAuthenticationSessionError.Code.canceledLogin.rawValue))
+    }
+
+    /// Drops a request canceled by its originating app without sending a second cancellation.
+    func authenticationWasCancelled() {
+        authenticationRequest = nil
     }
 
     private func reveal() {
@@ -127,11 +164,15 @@ final class Tab: NSObject, WKNavigationDelegate, WKUIDelegate {
         }
     }
 
-    /// Identifies as Safari; WKWebView's bare user agent gets degraded pages from some sites.
-    /// Installs the script that reports what is along the page's top edge. Configurations
-    /// WebKit derives from this one for script-opened pages carry the script and its handler along.
-    private static func defaultConfiguration() -> WKWebViewConfiguration {
+    /// Creates a browser configuration, isolating storage and extensions for ephemeral sign-in sessions.
+    static func configuration(ephemeral: Bool = false) -> WKWebViewConfiguration {
         let configuration = WKWebViewConfiguration()
+        if ephemeral {
+            configuration.websiteDataStore = .nonPersistent()
+        } else {
+            WebExtensions.shared.configure(configuration)
+        }
+        AeroPages.shared.configure(configuration)
         // Safari's version has matched the system's since 26; before that it ran three ahead of macOS.
         let system = ProcessInfo.processInfo.operatingSystemVersion.majorVersion
         configuration.applicationNameForUserAgent = "Version/\(system >= 26 ? system : system + 3).0 Safari/605.1.15"
@@ -142,15 +183,15 @@ final class Tab: NSObject, WKNavigationDelegate, WKUIDelegate {
         return configuration
     }
 
-    private func changed() {
-        owner?.tabDidChange(self)
+    private func changed(_ extensionProperties: WKWebExtension.TabChangedProperties = []) {
+        owner?.tabDidChange(self, extensionProperties: extensionProperties)
     }
 
     private func titleChanged() {
         if let url = webView.url, let title = webView.title, !title.isEmpty {
             History.shared.setTitle(title, for: url)
         }
-        changed()
+        changed([.title])
     }
 
     private func showError(_ error: Error) {
@@ -179,7 +220,23 @@ final class Tab: NSObject, WKNavigationDelegate, WKUIDelegate {
         _ webView: WKWebView, decidePolicyFor action: WKNavigationAction,
         decisionHandler: @escaping (WKNavigationActionPolicy) -> Void
     ) {
-        guard let url = action.request.url, action.navigationType == .linkActivated else {
+        if action.shouldPerformDownload { return decisionHandler(.download) }
+        guard let url = action.request.url else { return decisionHandler(.allow) }
+        if action.targetFrame?.isMainFrame != false, completeAuthenticationIfNeeded(with: url) {
+            decisionHandler(.cancel)
+            return
+        }
+        if url.scheme == "aero", url.path.hasPrefix("/action/") {
+            if webView.url?.scheme == "aero" {
+                switch url.host {
+                case "extensions": owner?.handleExtensionCatalogAction(url, from: self)
+                case "settings": owner?.handleSettingsAction(url, from: self)
+                default: break
+                }
+            }
+            return decisionHandler(.cancel)
+        }
+        guard action.navigationType == .linkActivated else {
             return decisionHandler(.allow)
         }
         if action.modifierFlags.contains(.command) {
@@ -187,11 +244,52 @@ final class Tab: NSObject, WKNavigationDelegate, WKUIDelegate {
             return decisionHandler(.cancel)
         }
         // Links to other apps (mailto:, tel:, custom schemes) go to the system.
-        if !["http", "https", "about", "blob", "data", "file", "javascript"].contains(url.scheme?.lowercased() ?? "") {
+        if !["http", "https", "aero", "about", "blob", "data", "file", "javascript"].contains(
+            url.scheme?.lowercased() ?? "")
+        {
             NSWorkspace.shared.open(url)
             return decisionHandler(.cancel)
         }
         decisionHandler(.allow)
+    }
+
+    private func completeAuthenticationIfNeeded(with url: URL) -> Bool {
+        guard let request = authenticationRequest else { return false }
+        guard request.callback?.matchesURL(url) == true else { return false }
+        authenticationRequest = nil
+        request.complete(withCallbackURL: url)
+        DispatchQueue.main.async { [weak self] in
+            guard let self else { return }
+            owner?.close(self)
+        }
+        return true
+    }
+
+    // MARK: WKWebExtensionTab
+
+    func window(for context: WKWebExtensionContext) -> (any WKWebExtensionWindow)? { owner }
+    func indexInWindow(for context: WKWebExtensionContext) -> Int { owner?.tabs.firstIndex { $0 === self } ?? NSNotFound }
+    func webView(for context: WKWebExtensionContext) -> WKWebView? { webView }
+    func isPinned(for context: WKWebExtensionContext) -> Bool { isPinned }
+
+    func setPinned(_ pinned: Bool, for context: WKWebExtensionContext, completionHandler: @escaping (Error?) -> Void) {
+        owner?.setPinned(pinned, tab: self)
+        completionHandler(nil)
+    }
+
+    func webView(
+        _ webView: WKWebView, decidePolicyFor response: WKNavigationResponse,
+        decisionHandler: @escaping (WKNavigationResponsePolicy) -> Void
+    ) {
+        decisionHandler(response.canShowMIMEType ? .allow : .download)
+    }
+
+    func webView(_ webView: WKWebView, navigationAction: WKNavigationAction, didBecome download: WKDownload) {
+        owner?.downloads.accept(download)
+    }
+
+    func webView(_ webView: WKWebView, navigationResponse: WKNavigationResponse, didBecome download: WKDownload) {
+        owner?.downloads.accept(download)
     }
 
     func webView(_ webView: WKWebView, didCommit navigation: WKNavigation!) {
@@ -257,6 +355,24 @@ final class Tab: NSObject, WKNavigationDelegate, WKUIDelegate {
         panel.allowsMultipleSelection = parameters.allowsMultipleSelection
         panel.canChooseDirectories = parameters.allowsDirectories
         panel.begin { response in completionHandler(response == .OK ? panel.urls : nil) }
+    }
+
+    /// Leaves camera and microphone approval to WebKit's per-origin system prompt.
+    func webView(
+        _ webView: WKWebView, requestMediaCapturePermissionFor origin: WKSecurityOrigin,
+        initiatedByFrame frame: WKFrameInfo, type: WKMediaCaptureType,
+        decisionHandler: @escaping (WKPermissionDecision) -> Void
+    ) {
+        decisionHandler(.prompt)
+    }
+
+    /// Leaves location approval to WebKit's per-origin system prompt on macOS 27 and later.
+    @available(macOS 27.0, *)
+    func webView(
+        _ webView: WKWebView, requestGeolocationPermissionFor origin: WKSecurityOrigin,
+        initiatedByFrame frame: WKFrameInfo, decisionHandler: @escaping (WKPermissionDecision) -> Void
+    ) {
+        decisionHandler(.prompt)
     }
 
     /// Shows a page's alert/confirm/prompt as a sheet. `done` gets whether the first button was

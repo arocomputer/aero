@@ -12,12 +12,7 @@ struct HistoryEntry: Equatable {
 /// Use from the main thread only.
 final class History {
     /// The user's history, stored under the bundle identifier so it survives a rename of the app.
-    static let shared: History = {
-        let directory = FileManager.default.urls(for: .applicationSupportDirectory, in: .userDomainMask)[0]
-            .appendingPathComponent(Bundle.main.bundleIdentifier ?? "browser-dev")
-        try? FileManager.default.createDirectory(at: directory, withIntermediateDirectories: true)
-        return History(path: directory.appendingPathComponent("history.sqlite").path)
-    }()
+    static let shared = History(path: AppPaths.support.appendingPathComponent("history.sqlite").path)
 
     private var db: OpaquePointer?
 
@@ -79,6 +74,11 @@ final class History {
             }
         }
         return entries
+    }
+
+    /// Removes every stored visit and title while leaving the database ready for new history.
+    func clear() {
+        run("DELETE FROM pages")
     }
 
     /// Runs one statement with positional bindings (String, Double or Int), calling `onRow` per result row.

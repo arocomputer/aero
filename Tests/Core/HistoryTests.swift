@@ -39,3 +39,9 @@ private func history(visiting addresses: [String]) -> History {
     let history = history(visiting: [AddressInput.searchURL(for: "norma").absoluteString])
     #expect(history.suggestions(for: "google").isEmpty)
 }
+
+@Test func clearingHistoryRemovesSuggestions() {
+    let history = history(visiting: ["https://aero.example/"])
+    history.clear()
+    #expect(history.suggestions(for: "aero").isEmpty)
+}

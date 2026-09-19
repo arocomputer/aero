@@ -2,7 +2,7 @@
 
 ## Reporting a vulnerability
 
-Use [GitHub private vulnerability reporting](https://github.com/arocomputer/aro/security/advisories/new).
+Use [GitHub private vulnerability reporting](https://github.com/arocomputer/aero/security/advisories/new).
 Do not open a public issue containing an exploit or private information.
 
 Include the affected version or commit, the macOS version, a minimal reproduction, and

@@ -21,14 +21,12 @@ enum AddressInput {
     }
 
     static func searchURL(for query: String) -> URL {
-        var components = URLComponents(string: "https://www.google.com/search")!
-        components.queryItems = [URLQueryItem(name: "q", value: query)]
-        return components.url!
+        BrowserSettings.searchEngine.url(for: query)
     }
 
     /// True for the result pages `searchURL` produces, so they can be kept out of history.
     static func isSearchURL(_ url: URL) -> Bool {
-        url.host?.hasPrefix("www.google.") == true && url.path == "/search"
+        SearchEngine.allCases.contains { $0.owns(url) }
     }
 
     /// The short form shown in suggestions and the address field: no scheme, no "www.", no trailing slash.

@@ -1,0 +1,188 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <meta name="color-scheme" content="light dark">
+  <meta http-equiv="Content-Security-Policy" content="default-src 'none'; style-src 'unsafe-inline'; script-src 'unsafe-inline'; img-src data: https://*.mzstatic.com; connect-src https://itunes.apple.com">
+  <title>{{appName}} Extensions</title>
+  <style>
+    :root { font: 15px -apple-system, BlinkMacSystemFont, sans-serif; color: #202124; background: #fff; }
+    * { box-sizing: border-box; }
+    body { margin: 0; min-height: 100vh; }
+    .topbar { position: sticky; top: 0; z-index: 5; display: grid; grid-template-columns: 260px minmax(320px, 620px) 1fr; align-items: center; min-height: 82px; padding: 15px 38px; border-bottom: 1px solid #e7e7e9; background: #fff; }
+    .brand { display: flex; align-items: center; gap: 12px; font-size: 17px; font-weight: 650; letter-spacing: -.2px; }
+    .brand-mark { display: grid; place-items: center; width: 38px; height: 38px; color: #171719; }
+    .brand-mark svg { width: 33px; height: 28px; }
+    .search-wrap { position: relative; }
+    .search-wrap:before { content: ''; position: absolute; left: 17px; top: 50%; width: 12px; height: 12px; border: 2px solid #68686d; border-radius: 50%; transform: translateY(-60%); pointer-events: none; }
+    .search-wrap:after { content: ''; position: absolute; left: 29px; top: 28px; width: 7px; height: 2px; border-radius: 2px; background: #68686d; transform: rotate(45deg); pointer-events: none; }
+    .search { width: 100%; height: 50px; padding: 0 20px 0 48px; border: 1px solid #dedee1; border-radius: 15px; outline: none; background: #f7f7f8; color: inherit; font: inherit; box-shadow: 0 2px 8px rgba(0,0,0,.04); }
+    .search:focus { border-color: #8cb9ff; background: #fff; box-shadow: 0 0 0 4px rgba(0,113,227,.1); }
+    .shell { display: grid; grid-template-columns: 260px minmax(0, 1fr); width: min(1660px, 100%); margin: 0 auto; }
+    aside { min-height: calc(100vh - 82px); padding: 34px 24px 80px 38px; border-right: 1px solid #ececef; }
+    aside nav { position: sticky; top: 116px; }
+    .nav-group { margin-bottom: 28px; }
+    .nav-title { margin: 0 0 9px 13px; color: #8a8a8f; font-size: 12px; font-weight: 650; letter-spacing: .01em; }
+    .nav-item { display: flex; width: 100%; padding: 10px 13px; border: 0; border-radius: 10px; color: #3a3a3c; background: transparent; font: inherit; text-align: left; cursor: pointer; }
+    .nav-item:hover { background: #f3f3f5; }
+    .nav-item.active { color: #0866d5; background: #eaf2ff; font-weight: 600; }
+    main { min-width: 0; padding: 44px clamp(34px, 5vw, 76px) 100px; }
+    .page-head { display: flex; align-items: end; justify-content: space-between; gap: 24px; margin-bottom: 38px; }
+    h1 { margin: 0 0 8px; font-size: 38px; letter-spacing: -1.25px; }
+    .page-head p, .section-head p, .card p { color: #707076; }
+    .page-head p { margin: 0; font-size: 16px; }
+    section { margin-top: 44px; }
+    .section-head { margin-bottom: 18px; }
+    h2 { margin: 0 0 5px; font-size: 24px; letter-spacing: -.5px; }
+    .section-head p { margin: 0; }
+    .grid { display: grid; grid-template-columns: repeat(3, minmax(210px, 1fr)); gap: 18px; }
+    .card { display: flex; min-width: 0; min-height: 184px; padding: 22px; border: 1px solid #e6e6e9; border-radius: 18px; background: #fff; box-shadow: 0 7px 24px rgba(0,0,0,.05); transition: transform 140ms ease, box-shadow 140ms ease; }
+    .card:hover { transform: translateY(-2px); box-shadow: 0 13px 32px rgba(0,0,0,.09); }
+    .card-inner { display: flex; min-width: 0; flex: 1; flex-direction: column; }
+    .card-top { display: flex; align-items: center; gap: 14px; }
+    .icon { width: 58px; height: 58px; flex: none; border-radius: 13px; object-fit: cover; box-shadow: 0 5px 16px rgba(0,0,0,.14); }
+    .card-title { min-width: 0; }
+    h3 { margin: 0 0 4px; overflow: hidden; font-size: 17px; letter-spacing: -.2px; text-overflow: ellipsis; white-space: nowrap; }
+    .category { color: #8a8a8f; font-size: 12px; }
+    .card p { margin: 15px 0 18px; line-height: 1.42; }
+    .actions { display: flex; align-items: center; gap: 8px; margin-top: auto; }
+    .button, .installed { display: inline-flex; align-items: center; justify-content: center; min-height: 34px; padding: 0 14px; border-radius: 10px; text-decoration: none; font-size: 13px; font-weight: 620; }
+    .button { color: white; background: #0866d5; }
+    .button:hover { background: #075abb; }
+    .secondary, .installed { color: #343438; background: #f0f0f2; }
+    .secondary:hover { background: #e6e6e9; }
+    .danger { color: #d70015; background: #fff0f1; }
+    .danger:hover { background: #ffe4e6; }
+    .empty { grid-column: 1 / -1; padding: 28px; border: 1px dashed #d1d1d6; border-radius: 16px; color: #77777c; background: #fafafa; text-align: center; }
+    [hidden] { display: none; }
+    @media (max-width: 1100px) { .grid { grid-template-columns: repeat(2, minmax(220px, 1fr)); } }
+    @media (max-width: 800px) {
+      .topbar { grid-template-columns: auto minmax(220px, 1fr); gap: 24px; padding-inline: 24px; }
+      .shell { grid-template-columns: 205px minmax(0, 1fr); }
+      aside { padding-left: 24px; }
+      main { padding-inline: 26px; }
+      .grid { grid-template-columns: 1fr; }
+    }
+    @media (prefers-color-scheme: dark) {
+      :root { color: #f5f5f7; background: #171719; }
+      .topbar { border-color: #343437; background: #1c1c1e; }
+      .brand-mark { color: #f5f5f7; }
+      .search { border-color: #414145; background: #2a2a2d; }
+      .search:focus { border-color: #5d9eff; background: #252528; }
+      aside { border-color: #303034; }
+      .nav-item { color: #d0d0d4; }
+      .nav-item:hover { background: #252528; }
+      .nav-item.active { color: #7db4ff; background: #183252; }
+      .page-head p, .section-head p, .card p { color: #a1a1a6; }
+      .card { border-color: #37373a; background: #242426; box-shadow: 0 7px 24px rgba(0,0,0,.22); }
+      .card:hover { box-shadow: 0 13px 32px rgba(0,0,0,.32); }
+      .secondary, .installed { color: #ededf0; background: #39393d; }
+      .secondary:hover { background: #45454a; }
+      .danger { color: #ff6961; background: #40272a; }
+      .empty { border-color: #444448; color: #9c9ca2; background: #202023; }
+    }
+  </style>
+</head>
+<body>
+  <header class="topbar">
+    <div class="brand"><span class="brand-mark">{{mark}}</span><span>{{appName}} Extensions</span></div>
+    <div class="search-wrap"><input class="search" type="search" placeholder="Search extensions" aria-label="Search extensions" autofocus></div>
+  </header>
+  <div class="shell">
+    <aside>
+      <nav aria-label="Extension categories">
+        <div class="nav-group">
+          <p class="nav-title">Browse</p>
+          <button class="nav-item active" data-filter="all">Discover</button>
+          <button class="nav-item" data-filter="installed">Installed</button>
+          <button class="nav-item" data-filter="on-mac">On This Mac</button>
+        </div>
+        <div class="nav-group">
+          <p class="nav-title">Categories</p>
+          <button class="nav-item" data-filter="privacy">Privacy &amp; Security</button>
+          <button class="nav-item" data-filter="productivity">Productivity</button>
+          <button class="nav-item" data-filter="appearance">Appearance</button>
+          <button class="nav-item" data-filter="developer">Developer Tools</button>
+        </div>
+      </nav>
+    </aside>
+    <main>
+      <div class="page-head"><div><h1>Extensions</h1><p>{{appName}} Extensions</p></div><a class="button secondary" href="aero://extensions/action/install-file">Install from File</a></div>
+      <section><div class="section-head"><h2>Available</h2><p id="catalog-status">Extensions from their original developers.</p></div><div class="grid" id="available-grid">{{available}}</div></section>
+      <section><div class="section-head"><h2>On This Mac</h2><p>Compatible extension apps found locally.</p></div><div class="grid">{{onMac}}</div></section>
+      <section><div class="section-head"><h2>Installed</h2><p>Extensions currently loaded by {{appName}}.</p></div><div class="grid">{{installed}}</div></section>
+    </main>
+  </div>
+  <script>
+    const search = document.querySelector('.search');
+    let category = 'all';
+    function filter() {
+      const query = search.value.trim().toLowerCase();
+      document.querySelectorAll('.extension').forEach(card => {
+        const matchesText = !query || card.dataset.search.includes(query);
+        const matchesCategory = category === 'all' || card.dataset.category.split(' ').includes(category);
+        card.hidden = !matchesText || !matchesCategory;
+      });
+    }
+    search.addEventListener('input', filter);
+    document.querySelectorAll('.nav-item').forEach(item => item.addEventListener('click', () => {
+      document.querySelector('.nav-item.active').classList.remove('active');
+      item.classList.add('active');
+      category = item.dataset.filter;
+      filter();
+    }));
+
+    const known = new Set([...document.querySelectorAll('[data-app-id]')].map(card => card.dataset.appId));
+    const grid = document.querySelector('#available-grid');
+    const status = document.querySelector('#catalog-status');
+    function cleanName(name) { return name.replace(/\s+for Safari\b/gi, '').replace(/\s+[–-]\s+Dark Mode$/i, ''); }
+    function categoryFor(text) {
+      if (/privacy|password|block|security|cookie|tracker|vpn/i.test(text)) return 'privacy';
+      if (/dark|theme|color|font|appearance/i.test(text)) return 'appearance';
+      if (/developer|inspect|github|script|css|header/i.test(text)) return 'developer';
+      return 'productivity';
+    }
+    function summaryFor(result) {
+      const line = (result.description || '').split(/\n|(?<=[.!?])\s/)[0].trim();
+      return line.length > 135 ? line.slice(0, 132).trimEnd() + '…' : line;
+    }
+    function addResult(result) {
+      const id = String(result.trackId);
+      const evidence = `${result.trackName || ''} ${result.description || ''}`;
+      if (known.has(id) || !/safari extension/i.test(evidence)) return false;
+      known.add(id);
+      const name = cleanName(result.trackName || 'Extension');
+      const summary = summaryFor(result) || 'Add a WebKit-compatible browser feature.';
+      const category = categoryFor(`${name} ${summary}`);
+      const card = document.createElement('article');
+      card.className = 'card extension';
+      card.dataset.appId = id;
+      card.dataset.search = `${name} ${summary}`.toLowerCase();
+      card.dataset.category = category;
+      const inner = document.createElement('div'); inner.className = 'card-inner';
+      const top = document.createElement('div'); top.className = 'card-top';
+      const icon = document.createElement('img'); icon.className = 'icon'; icon.alt = ''; icon.src = result.artworkUrl100;
+      const title = document.createElement('div'); title.className = 'card-title';
+      const heading = document.createElement('h3'); heading.textContent = name;
+      const label = document.createElement('span'); label.className = 'category';
+      label.textContent = {privacy: 'Privacy & Security', appearance: 'Appearance', developer: 'Developer Tools'}[category] || 'Productivity';
+      title.append(heading, label); top.append(icon, title);
+      const copy = document.createElement('p'); copy.textContent = summary;
+      const actions = document.createElement('div'); actions.className = 'actions';
+      const get = document.createElement('a'); get.className = 'button'; get.textContent = 'Get'; get.href = `aero://extensions/action/open-store?id=${id}`;
+      actions.append(get); inner.append(top, copy, actions); card.append(inner); grid.append(card);
+      return true;
+    }
+    fetch('https://itunes.apple.com/search?term=safari%20extension&entity=macSoftware&limit=200&country=us')
+      .then(response => response.ok ? response.json() : Promise.reject())
+      .then(payload => {
+        let added = 0;
+        payload.results.forEach(result => { if (addResult(result)) added++; });
+        status.textContent = `${known.size} extensions from their original developers.`;
+        filter();
+      })
+      .catch(() => { status.textContent = 'Extensions from their original developers. Press Command-R to try again.'; });
+  </script>
+</body>
+</html>

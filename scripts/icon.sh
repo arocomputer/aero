@@ -1,5 +1,5 @@
 #!/bin/sh
-# Puts the app icon into a bundle's Resources folder: icon.sh <AppIcon.icon> <Resources dir>
+# Puts the app icon into a bundle's Resources folder: icon.sh <aero.icon> <Resources dir>
 #
 # Apple's route is to compile the Icon Composer file with actool, which ships in Xcode. That produces
 # Assets.car, from which macOS renders the Default, Dark, Clear and Tinted looks itself, plus an
@@ -12,7 +12,7 @@ mkdir -p "$resources"
 
 if actool=$(xcrun --find actool 2>/dev/null); then
     "$actool" "$icon" --compile "$resources" --app-icon AppIcon --include-all-app-icons \
-        --platform macosx --target-device mac --minimum-deployment-target 14.0 \
+        --platform macosx --target-device mac --minimum-deployment-target 15.4 \
         --enable-on-demand-resources NO --development-region en \
         --output-partial-info-plist "$(mktemp)" --errors --warnings >/dev/null
     echo "icon: compiled with actool, all appearances"

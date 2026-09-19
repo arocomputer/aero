@@ -19,14 +19,31 @@
 	<key>CFBundleVersion</key>
 	<string>1</string>
 	<key>LSMinimumSystemVersion</key>
-	<string>14.0</string>
+	<string>15.4</string>
 	<key>NSHighResolutionCapable</key>
 	<true/>
 	<key>NSPrincipalClass</key>
 	<string>NSApplication</string>
+	<key>NSCameraUsageDescription</key>
+	<string>Websites you allow can use your camera for calls, recording, and identity checks.</string>
+	<key>NSMicrophoneUsageDescription</key>
+	<string>Websites you allow can use your microphone for calls and recording.</string>
+	<key>NSLocationUsageDescription</key>
+	<string>Websites you allow can use your location for nearby and location-based results.</string>
 	<key>NSAppTransportSecurity</key>
 	<dict>
 		<key>NSAllowsArbitraryLoadsInWebContent</key>
+		<true/>
+	</dict>
+	<key>ASWebAuthenticationSessionWebBrowserSupportCapabilities</key>
+	<dict>
+		<key>IsSupported</key>
+		<true/>
+		<key>EphemeralBrowserSessionIsSupported</key>
+		<true/>
+		<key>AdditionalHeaderFieldsAreSupported</key>
+		<true/>
+		<key>CallbackURLMatchingIsSupported</key>
 		<true/>
 	</dict>
 	<key>CFBundleURLTypes</key>

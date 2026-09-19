@@ -27,7 +27,7 @@ def install():
     if previous != hooks:
         hook = previous / 'pre-commit'
         if hook.is_file() and os.access(hook, os.X_OK):
-            git('config', '--worktree', 'aro.previousPreCommit', str(hook))
+            git('config', '--worktree', 'aero.previousPreCommit', str(hook))
     git('config', '--worktree', 'core.hooksPath', str(hooks))
     print('Repository hooks enabled for this worktree.')
 

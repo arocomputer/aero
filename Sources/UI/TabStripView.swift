@@ -1,7 +1,7 @@
 import AppKit
 
 /// The single strip of chrome, filling the window's titlebar: a hairline after the traffic lights, the
-/// back and forward arrows, pinned tabs as monograms, then tab pills, then a "+" that shows while the
+/// back, forward and reload controls, pinned tabs as monograms, then tab pills, then a "+" that shows while the
 /// pointer is over the strip. Laid out by hand; empty areas drag the window.
 /// Changes to the tabs animate: the active highlight slides between items, new ones slide in, the rest make room.
 /// It has no surface of its own: it shows `pageColor`, the color along the page's top edge, and its
@@ -10,6 +10,8 @@ final class TabStripView: NSView {
     weak var controller: BrowserWindowController?
     /// Space reserved on the left for the traffic lights.
     var leadingInset: CGFloat = 86 { didSet { if leadingInset != oldValue { needsLayout = true } } }
+    /// Matches the right controls to the close button's distance from the opposite window edge.
+    var trailingInset: CGFloat = 14 { didSet { if trailingInset != oldValue { needsLayout = true } } }
 
     /// The color along the page's top edge, shown behind the strip; nil shows the window through.
     /// Every change glides over a moment, so the strip reads as one surface easing between the page's
@@ -35,8 +37,21 @@ final class TabStripView: NSView {
     private let separator = TintView(opacity: 0.14, radius: 0)
     private let backButton = StripButton(symbol: "chevron.backward", pointSize: 14, weight: .medium)
     private let forwardButton = StripButton(symbol: "chevron.forward", pointSize: 14, weight: .medium)
-    private let plusButton = StripButton(symbol: "plus", pointSize: 12)
-
+    private let reloadButton = StripButton(symbol: "arrow.clockwise", pointSize: 13, weight: .medium)
+    private let plusButton = StripButton(symbol: "plus", pointSize: 13)
+    private let downloadsButton = StripButton(symbol: "arrow.down.circle", pointSize: 14, weight: .medium)
+    private let menuButton = StripButton(symbol: "ellipsis", pointSize: 15, weight: .bold)
+    var showsDownloads = false {
+        didSet {
+            guard showsDownloads != oldValue else { return }
+            downloadsButton.isHidden = !showsDownloads
+            if showsDownloads {
+                downloadsButton.alphaValue = 0
+                downloadsButton.animator().alphaValue = 1
+            }
+            needsLayout = true
+        }
+    }
     override init(frame: NSRect) {
         super.init(frame: frame)
         wantsLayer = true
@@ -44,10 +59,25 @@ final class TabStripView: NSView {
 
         backButton.onClick = { [weak self] in self?.controller?.goBackInHistory(nil) }
         forwardButton.onClick = { [weak self] in self?.controller?.goForwardInHistory(nil) }
-        [separator, backButton, forwardButton].forEach(addSubview)
+        reloadButton.toolTip = "Reload"
+        reloadButton.onClick = { [weak self] in self?.controller?.reloadPage(nil) }
+        [separator, backButton, forwardButton, reloadButton].forEach(addSubview)
         plusButton.onClick = { [weak self] in self?.controller?.newTab(nil) }
         plusButton.alphaValue = 0
         addSubview(plusButton)
+        downloadsButton.toolTip = "Downloads"
+        downloadsButton.onClick = { [weak self] in
+            guard let self else { return }
+            controller?.showDownloads(relativeTo: downloadsButton)
+        }
+        downloadsButton.isHidden = true
+        addSubview(downloadsButton)
+        menuButton.toolTip = "\(appName) Menu"
+        menuButton.onClick = { [weak self] in
+            guard let self else { return }
+            controller?.toggleBrowserMenu(relativeTo: menuButton)
+        }
+        addSubview(menuButton)
         addTrackingArea(
             NSTrackingArea(
                 rect: .zero, options: [.mouseEnteredAndExited, .activeInActiveApp, .inVisibleRect],
@@ -59,6 +89,12 @@ final class TabStripView: NSView {
     override var isFlipped: Bool { true }
     override var mouseDownCanMoveWindow: Bool { true }
 
+    /// Allows the system's title-bar double-click only when no tab or control occupies the point.
+    func allowsWindowZoom(at pointInWindow: NSPoint) -> Bool {
+        let point = convert(pointInWindow, from: nil)
+        return bounds.contains(point) && hitTest(point) === self
+    }
+
     /// Brings monograms and pills in line with the controller's tabs (pinned ones first), animating what moved.
     func update(tabs: [Tab], active: Tab?) {
         let pinned = tabs.filter(\.isPinned), ordinary = tabs.filter { !$0.isPinned }
@@ -67,6 +103,7 @@ final class TabStripView: NSView {
         activeItem = nil
         backButton.isEnabled = active?.webView.canGoBack ?? false
         forwardButton.isEnabled = active?.webView.canGoForward ?? false
+        reloadButton.isEnabled = active?.isBlank == false
 
         for (button, tab) in zip(pinButtons, pinned) {
             button.letter = tab.monogram
@@ -89,7 +126,10 @@ final class TabStripView: NSView {
         }
         // This runs on every title and progress tick of every tab. Only the number of items, which one
         // is active and the space available move anything, so the rest of the time frames are left alone.
-        let arrangement: [AnyHashable] = [pinButtons.count, pills.count, activeItem.map(ObjectIdentifier.init), leadingInset, bounds.width]
+        let arrangement: [AnyHashable] = [
+            pinButtons.count, pills.count, activeItem.map(ObjectIdentifier.init), leadingInset, trailingInset, bounds.width,
+            showsDownloads,
+        ]
         if arrangement != arranged || !entering.isEmpty {
             arranged = arrangement
             arrange(animated: bounds.width > 0)
@@ -118,13 +158,15 @@ final class TabStripView: NSView {
     /// never cuts an animation short.
     private func arrange(animated: Bool) {
         var targets: [(NSView, NSRect)] = []
-        let y = (bounds.height - Metrics.itemHeight) / 2
+        let y = (bounds.height - Metrics.itemHeight) / 2 - Metrics.topLift
         // The hairline sits between the traffic lights and the arrows; in full screen there are no lights.
         separator.isHidden = leadingInset < 40
-        separator.frame = NSRect(x: leadingInset - 6, y: (bounds.height - 16) / 2, width: 1, height: 16)
+        separator.frame = NSRect(x: leadingInset - 6, y: (bounds.height - 16) / 2 - Metrics.topLift, width: 1, height: 16)
         var x = separator.isHidden ? leadingInset : leadingInset + 5
-        for arrow in [backButton, forwardButton] {
-            arrow.frame = NSRect(x: x, y: (bounds.height - Metrics.arrowSize) / 2, width: Metrics.arrowSize, height: Metrics.arrowSize)
+        for control in [backButton, forwardButton, reloadButton] {
+            control.frame = NSRect(
+                x: x, y: (bounds.height - Metrics.arrowSize) / 2 - Metrics.topLift,
+                width: Metrics.arrowSize, height: Metrics.arrowSize)
             x += Metrics.arrowSize + 2
         }
         x += 8
@@ -134,13 +176,22 @@ final class TabStripView: NSView {
         }
         if !pinButtons.isEmpty { x += 4 }
 
-        let available = bounds.width - x - 48
+        var trailingStart = bounds.width - trailingInset - Metrics.itemHeight
+        if showsDownloads { trailingStart -= Metrics.itemHeight + 4 }
+        let available = trailingStart - x - 48
         let width = min(Metrics.pillWidth, max(44, available / CGFloat(max(pills.count, 1)) - Metrics.gap)).rounded(.down)
         for pill in pills {
             targets.append((pill, NSRect(x: x, y: y, width: width, height: Metrics.itemHeight)))
             x += width + Metrics.gap
         }
         targets.append((plusButton, NSRect(x: x + 2, y: y, width: Metrics.itemHeight, height: Metrics.itemHeight)))
+        var trailingX = bounds.width - trailingInset
+        trailingX -= Metrics.itemHeight
+        targets.append((menuButton, NSRect(x: trailingX, y: y, width: Metrics.itemHeight, height: Metrics.itemHeight)))
+        if showsDownloads {
+            trailingX -= Metrics.itemHeight + 4
+            targets.append((downloadsButton, NSRect(x: trailingX, y: y, width: Metrics.itemHeight, height: Metrics.itemHeight)))
+        }
         let highlightTarget = targets.first { $0.0 === activeItem }?.1 ?? .zero
 
         guard animated else {
@@ -198,6 +249,7 @@ private final class TintView: NSView {
 /// Sizes of the strip's items. The proportions come from the reference design, scaled up to sit in the
 /// system's regular 52pt toolbar instead of its 44pt one.
 private enum Metrics {
+    static let topLift: CGFloat = 6
     static let itemHeight: CGFloat = 30
     static let pillWidth: CGFloat = 208
     static let pinWidth: CGFloat = 32
@@ -224,7 +276,7 @@ final class TabPillView: NSView {
 
     private let fill = NSView()
     private let label = NSTextField(labelWithString: "")
-    private let closeButton = StripButton(symbol: "xmark", pointSize: 8)
+    private let closeButton = StripButton(symbol: "xmark", pointSize: 11)
     private var isHovered = false {
         didSet {
             needsDisplay = true
@@ -348,8 +400,8 @@ final class PinButton: NSView {
     @objc private func unpinClicked() { onUnpin?() }
 }
 
-/// A small round symbol button for the strip, used for closing a tab, the new-tab "+" and the back and
-/// forward arrows. It is a bare glyph; the gray disc shows only while the pointer is over the button
+/// A small round symbol button for the strip, used for closing a tab, the new-tab "+" and navigation
+/// controls. It is a bare glyph; the gray disc shows only while the pointer is over the button
 /// itself. Disabled, it dims and ignores the pointer.
 final class StripButton: NSView {
     var onClick: (() -> Void)?
@@ -358,12 +410,13 @@ final class StripButton: NSView {
     private let icon: NSImageView
     private var isHovered = false { didSet { needsDisplay = true } }
 
-    init(symbol: String, pointSize: CGFloat, weight: NSFont.Weight = .semibold) {
+    init(symbol: String, pointSize: CGFloat, weight: NSFont.Weight = .semibold, rotation: CGFloat = 0) {
         let image = NSImage(systemSymbolName: symbol, accessibilityDescription: symbol)!
             .withSymbolConfiguration(.init(pointSize: pointSize, weight: weight))!
         icon = NSImageView(image: image)
         super.init(frame: .zero)
         wantsLayer = true
+        icon.frameCenterRotation = rotation
         addSubview(icon)
         addTrackingArea(
             NSTrackingArea(

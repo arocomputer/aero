@@ -8,13 +8,13 @@ abstraction before adding one.
 ## Getting set up
 
 ```sh
-git clone https://github.com/arocomputer/aro
-cd aro
+git clone https://github.com/arocomputer/aero
+cd aero
 ./x hooks
 ./x run
 ```
 
-Aero needs macOS 14 or newer and a Swift 6 toolchain. The Command Line Tools are enough.
+Aero needs macOS 15.4 or newer and a Swift 6 toolchain. The Command Line Tools are enough.
 Install Python 3 for repository tooling. Contributors using the managed `~/Code`
 collection should follow its README and use a worktree.
 
@@ -34,7 +34,7 @@ committed diff, so local hooks are not the only verification.
 
 ## Reporting issues
 
-Use the [bug or feature forms](https://github.com/arocomputer/aro/issues/new/choose).
+Use the [bug or feature forms](https://github.com/arocomputer/aero/issues/new/choose).
 A bug report needs steps, expected and actual behavior, and the affected version or
 commit. For a page that misbehaves, give a public address and say whether Safari does
 the same; Aero uses the same engine, and a problem Safari shares is WebKit's. For slow or
@@ -122,6 +122,20 @@ Aero is in development and has made no release. Commits and pull requests do not
 authorize one. Builds are signed ad hoc, which is enough to run locally and not enough
 to distribute; a release needs a Developer ID signature and notarization first.
 
+After Apple approves Aero's managed browser capabilities, download a provisioning
+profile for the explicit App ID. A signed bundle can then be produced entirely from
+the command line:
+
+```sh
+security find-identity -v -p codesigning
+AERO_SIGNING_IDENTITY='Developer ID Application: …' \
+  AERO_PROVISIONING_PROFILE=/path/to/Aero.provisionprofile ./x signed-app
+```
+
+`./x signed-app` embeds the profile, enables the entitlements in `Aero.entitlements`,
+uses the hardened runtime, and verifies the resulting signature. Normal `./x app`
+builds remain ad hoc and do not claim capabilities that Apple has not granted.
+
 After the maintainer explicitly authorizes a release:
 
 1. Choose the version and update `CFBundleShortVersionString` and `CFBundleVersion` in
@@ -137,7 +151,7 @@ Never release from a pull request or weaken tag protection to do so.
 
 ## Release notes
 
-[GitHub Releases](https://github.com/arocomputer/aro/releases) are the published history.
+[GitHub Releases](https://github.com/arocomputer/aero/releases) are the published history.
 Write a short release title and introduction, followed by these groups in order. Omit
 empty groups.
 

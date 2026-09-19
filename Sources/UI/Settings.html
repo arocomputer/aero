@@ -1,0 +1,191 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>{{appName}} Settings</title>
+  <style>
+    :root {
+      color-scheme: light dark;
+      font: 14px -apple-system, BlinkMacSystemFont, sans-serif;
+      --page: #f7f7f8; --sidebar: #efeff1; --surface: #fff; --surface-hover: #f4f4f6;
+      --text: #1c1c1e; --muted: #74747b; --line: #dfdfe3; --control: #ededf0;
+      --accent: #2671e8; --danger: #d93232; --shadow: 0 1px 2px rgba(18,18,22,.04);
+    }
+    * { box-sizing: border-box; }
+    html, body { min-height: 100%; }
+    body { margin: 0; background: var(--page); color: var(--text); }
+    button, input, select { font: inherit; }
+    .chrome-tone { position: fixed; inset: 0 0 auto; z-index: 8; height: 12px; background: var(--sidebar); pointer-events: none; }
+    .shell { min-height: 100vh; display: grid; grid-template-columns: 218px minmax(0, 1fr); }
+    aside { position: sticky; top: 0; height: 100vh; padding: 25px 14px 18px; background: var(--sidebar); border-right: 1px solid var(--line); display: flex; flex-direction: column; }
+    .brand { height: 36px; display: flex; align-items: center; gap: 9px; padding: 0 9px; margin-bottom: 15px; font-size: 18px; font-weight: 670; letter-spacing: -.025em; }
+    .mark { width: 19px; height: 17px; display: grid; place-items: center; }
+    .mark svg { width: 100%; height: 100%; }
+    nav { display: grid; gap: 2px; }
+    nav a { min-height: 36px; padding: 0 10px; border-radius: 9px; display: flex; align-items: center; gap: 10px; color: var(--muted); text-decoration: none; font-size: 13px; font-weight: 560; }
+    nav a:hover { background: rgba(127,127,137,.1); color: var(--text); }
+    nav a.active { background: rgba(127,127,137,.14); color: var(--text); }
+    nav img { width: 16px; height: 16px; object-fit: contain; opacity: .68; flex: none; }
+    nav a.active img { opacity: .9; }
+    .nav-separator { height: 1px; background: var(--line); margin: 10px 9px; }
+    .workspace { min-width: 0; }
+    .topbar { position: sticky; top: 0; z-index: 3; height: 70px; display: flex; align-items: center; justify-content: center; padding: 14px 36px; background: var(--page); }
+    .search { width: min(620px, 100%); height: 40px; display: flex; align-items: center; gap: 10px; padding: 0 14px; background: var(--surface); border: 1px solid var(--line); border-radius: 11px; box-shadow: var(--shadow); }
+    .search img { width: 15px; height: 15px; opacity: .55; }
+    .search input { width: 100%; border: 0; outline: 0; background: transparent; color: var(--text); }
+    .search input::placeholder { color: var(--muted); }
+    main { width: min(700px, calc(100% - 56px)); margin: 26px auto 72px; }
+    .panel { display: none; }
+    .panel.active { display: block; animation: reveal .14s ease-out; }
+    @keyframes reveal { from { opacity: 0; transform: translateY(3px); } }
+    .heading { margin-bottom: 22px; }
+    h1 { margin: 0; font-size: 23px; line-height: 1.2; letter-spacing: -.03em; }
+    .heading p { margin: 6px 0 0; color: var(--muted); font-size: 13px; line-height: 1.45; }
+    .group { margin-bottom: 24px; }
+    .group h2 { margin: 0 0 8px 2px; font-size: 12px; font-weight: 610; color: var(--muted); }
+    .card { overflow: hidden; background: var(--surface); border: 1px solid var(--line); border-radius: 12px; box-shadow: var(--shadow); }
+    .row { min-height: 64px; padding: 13px 15px; display: flex; align-items: center; justify-content: space-between; gap: 24px; }
+    .row + .row { border-top: 1px solid var(--line); }
+    .copy { min-width: 0; }
+    .title { font-size: 13px; font-weight: 610; }
+    .detail { margin-top: 3px; color: var(--muted); font-size: 12px; line-height: 1.4; }
+    .control { flex: none; display: flex; align-items: center; gap: 8px; }
+    select, .button { appearance: none; border: 1px solid transparent; border-radius: 8px; background: var(--control); color: var(--text); padding: 7px 11px; font-size: 13px; font-weight: 590; text-decoration: none; cursor: pointer; }
+    select { min-width: 138px; padding-right: 31px; background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='12' height='8'%3E%3Cpath d='m1 1 5 5 5-5' fill='none' stroke='%23777' stroke-width='1.5'/%3E%3C/svg%3E"); background-repeat: no-repeat; background-position: right 10px center; }
+    select:hover, .button:hover { background-color: var(--surface-hover); border-color: var(--line); }
+    .button.primary { background: var(--accent); color: white; }
+    .button.primary:hover { background: #1765d8; border-color: transparent; }
+    .button.danger { color: var(--danger); }
+    .version { color: var(--muted); font-size: 13px; white-space: nowrap; }
+    .no-results { display: none; padding: 72px 20px; text-align: center; color: var(--muted); }
+    body.searching .panel { display: block; margin-bottom: 42px; }
+    body.searching .panel .heading { display: none; }
+    body.searching .panel:not(.has-match), body.searching .group:not(.has-match), body.searching .row:not(.match) { display: none; }
+    body.searching .panel.has-match, body.searching .group.has-match { display: block; }
+    body.searching .row.match { display: flex; }
+    @media (prefers-color-scheme: dark) {
+      :root { --page: #141517; --sidebar: #1a1b1d; --surface: #202124; --surface-hover: #2b2c30; --text: #f1f1f3; --muted: #9999a1; --line: #323337; --control: #303136; --accent: #4f8df3; --danger: #ff6961; --shadow: 0 1px 2px rgba(0,0,0,.16); }
+      nav img, .search img { filter: invert(1); }
+      nav a.active { background: #292a2e; }
+    }
+    @media (max-width: 760px) {
+      .shell { display: block; }
+      aside { position: static; width: 100%; height: auto; padding: 18px; }
+      .brand { margin-bottom: 10px; }
+      nav { grid-auto-flow: column; overflow-x: auto; padding-bottom: 3px; }
+      nav a { white-space: nowrap; }
+      .nav-separator { display: none; }
+      .topbar { height: 74px; padding: 14px 20px; }
+      main { width: calc(100% - 40px); margin-top: 20px; }
+      .row { align-items: flex-start; flex-direction: column; gap: 13px; }
+    }
+  </style>
+</head>
+<body>
+  <div class="chrome-tone" aria-hidden="true"></div>
+  <div class="shell">
+    <aside>
+      <div class="brand"><span class="mark">{{mark}}</span><span>Settings</span></div>
+      <nav aria-label="Settings sections">
+        <a href="#general" data-panel="general"><img src="{{iconGeneral}}" alt="">General</a>
+        <a href="#search-engine" data-panel="search-engine"><img src="{{iconSearch}}" alt="">Search engine</a>
+        <a href="#privacy" data-panel="privacy"><img src="{{iconPrivacy}}" alt="">Privacy and security</a>
+        <a href="#downloads" data-panel="downloads"><img src="{{iconDownloads}}" alt="">Downloads</a>
+        <div class="nav-separator"></div>
+        <a href="#extensions" data-panel="extensions"><img src="{{iconExtensions}}" alt="">Extensions</a>
+        <a href="#about" data-panel="about"><img src="{{iconAbout}}" alt="">About {{appName}}</a>
+      </nav>
+    </aside>
+
+    <div class="workspace">
+      <div class="topbar">
+        <label class="search"><img src="{{iconSearch}}" alt=""><input id="settings-search" type="search" placeholder="Search settings" autocomplete="off"></label>
+      </div>
+      <main>
+        <section class="panel" id="general" data-title="General appearance theme default browser">
+          <div class="heading"><h1>General</h1><p>Choose how {{appName}} looks and which links open in it.</p></div>
+          <div class="group">
+            <h2>Appearance</h2>
+            <div class="card"><div class="row" data-search="appearance theme system light dark"><div class="copy"><div class="title">Appearance</div><div class="detail">Use the macOS appearance or keep {{appName}} light or dark.</div></div><div class="control"><select aria-label="Appearance" onchange="location.href='aero://settings/action/appearance?value='+encodeURIComponent(this.value)">{{appearances}}</select></div></div></div>
+          </div>
+          <div class="group">
+            <h2>Default browser</h2>
+            <div class="card"><div class="row" data-search="default browser links http https"><div class="copy"><div class="title">Default browser</div><div class="detail">{{defaultStatus}}</div></div><div class="control">{{defaultAction}}</div></div></div>
+          </div>
+        </section>
+
+        <section class="panel" id="search-engine" data-title="Search engine address field">
+          <div class="heading"><h1>Search engine</h1><p>Pick the service {{appName}} uses when the address field contains a search.</p></div>
+          <div class="group"><h2>Address field</h2><div class="card"><div class="row" data-search="search engine address field google duckduckgo bing brave"><div class="copy"><div class="title">Search engine</div><div class="detail">The provider name appears beside unfinished searches.</div></div><div class="control"><select aria-label="Search engine" onchange="location.href='aero://settings/action/search-engine?value='+encodeURIComponent(this.value)">{{searchEngines}}</select></div></div></div></div>
+        </section>
+
+        <section class="panel" id="privacy" data-title="Privacy and security history website data cookies cache sign-ins">
+          <div class="heading"><h1>Privacy and security</h1><p>Remove locally stored browsing records and website data.</p></div>
+          <div class="group"><h2>Credentials</h2><div class="card"><div class="row" data-search="passkeys security keys credentials icloud keychain 1password"><div class="copy"><div class="title">Passkeys and security keys</div><div class="detail">{{passkeyStatus}}</div></div><div class="control">{{passkeyAction}}</div></div></div></div>
+          <div class="group"><h2>History</h2><div class="card"><div class="row" data-search="history addresses page titles suggestions clear"><div class="copy"><div class="title">Browsing history</div><div class="detail">Remove addresses and page titles from address-field suggestions.</div></div><div class="control"><a class="button danger" href="aero://settings/action/clear-history">Clear History…</a></div></div></div></div>
+          <div class="group"><h2>Website data</h2><div class="card"><div class="row" data-search="website data cookies cache local storage sign-ins clear"><div class="copy"><div class="title">Cookies and website data</div><div class="detail">Remove cookies, caches, local storage, and website sign-ins.</div></div><div class="control"><a class="button danger" href="aero://settings/action/clear-website-data">Clear Website Data…</a></div></div></div></div>
+        </section>
+
+        <section class="panel" id="downloads" data-title="Downloads files folder save Finder">
+          <div class="heading"><h1>Downloads</h1><p>Choose where {{appName}} saves downloaded files.</p></div>
+          <div class="group"><h2>Location</h2><div class="card"><div class="row" data-search="downloads files folder save finder location"><div class="copy"><div class="title">Save files to</div><div class="detail">{{downloadFolder}}</div></div><div class="control"><a class="button" href="aero://settings/action/show-downloads">Show</a><a class="button" href="aero://settings/action/choose-downloads">Choose…</a></div></div></div></div>
+        </section>
+
+        <section class="panel" id="extensions" data-title="Extensions WebExtensions add remove configure">
+          <div class="heading"><h1>Extensions</h1><p>Add browser tools and control the extensions installed in {{appName}}.</p></div>
+          <div class="group"><h2>Extension library</h2><div class="card"><div class="row" data-search="extensions webextensions add remove configure 1password"><div class="copy"><div class="title">Manage extensions</div><div class="detail">Find, add, configure, and remove WebExtensions.</div></div><div class="control"><a class="button primary" href="aero://settings/action/extensions">Open Extensions</a></div></div></div></div>
+        </section>
+
+        <section class="panel" id="about" data-title="About {{appName}} version WebKit macOS">
+          <div class="heading"><h1>About {{appName}}</h1><p>A small native browser built for macOS.</p></div>
+          <div class="group"><h2>Version</h2><div class="card"><div class="row" data-search="about browser version build webkit macos"><div class="copy"><div class="title">{{appName}}</div><div class="detail">Powered by the WebKit included with macOS.</div></div><div class="version">{{version}}</div></div></div></div>
+        </section>
+
+        <div class="no-results">No settings match your search.</div>
+      </main>
+    </div>
+  </div>
+  <script>
+    const panels = [...document.querySelectorAll('.panel')];
+    const links = [...document.querySelectorAll('nav a[data-panel]')];
+    const search = document.querySelector('#settings-search');
+    const empty = document.querySelector('.no-results');
+    function showPanel() {
+      if (search.value.trim()) return;
+      const requested = location.hash.slice(1);
+      const id = panels.some(panel => panel.id === requested) ? requested : 'general';
+      panels.forEach(panel => panel.classList.toggle('active', panel.id === id));
+      links.forEach(link => link.classList.toggle('active', link.dataset.panel === id));
+    }
+    function filterSettings() {
+      const query = search.value.trim().toLowerCase();
+      document.body.classList.toggle('searching', query.length > 0);
+      if (!query) {
+        panels.forEach(panel => panel.classList.remove('has-match'));
+        document.querySelectorAll('.group, .row').forEach(item => item.classList.remove('has-match', 'match'));
+        empty.style.display = 'none'; showPanel(); return;
+      }
+      let matches = 0;
+      panels.forEach(panel => {
+        let panelMatches = 0;
+        panel.querySelectorAll('.group').forEach(group => {
+          let groupMatches = 0;
+          group.querySelectorAll('.row').forEach(row => {
+            const match = `${row.dataset.search || ''} ${row.textContent}`.toLowerCase().includes(query);
+            row.classList.toggle('match', match);
+            if (match) { groupMatches++; matches++; }
+          });
+          group.classList.toggle('has-match', groupMatches > 0); panelMatches += groupMatches;
+        });
+        panel.classList.toggle('has-match', panelMatches > 0);
+      });
+      links.forEach(link => link.classList.remove('active'));
+      empty.style.display = matches ? 'none' : 'block';
+    }
+    addEventListener('hashchange', showPanel);
+    search.addEventListener('input', filterSettings);
+    showPanel();
+  </script>
+</body>
+</html>
