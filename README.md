@@ -1,4 +1,11 @@
-# Aero
+<p align="center">
+  <a href="https://aero.aro.computer">
+  <picture>
+    <source media="(prefers-color-scheme: dark)" srcset="assets/logo-dark.svg">
+    <img src="assets/logo-light.svg" alt="Aero logo" height="42">
+  </picture>
+  </a>
+</p>
 
 Aero is a small, fast macOS browser. It is a native AppKit shell around the system's
 WebKit, with no package dependencies. The executable is under 1 MB.
