@@ -43,7 +43,10 @@ final class PageEdge {
             cancelPending()
             undecided = nil
             let parts = report.split(separator: ",").compactMap { Double($0) }
-            return show(parts.count == 3 ? NSColor(srgbRed: parts[0] / 255, green: parts[1] / 255, blue: parts[2] / 255, alpha: 1) : nil)
+            return show(
+                parts.count == 3
+                    ? NSColor(srgbRed: parts[0] / 255, green: parts[1] / 255, blue: parts[2] / 255, alpha: 1)
+                    : nil)
         }
         // A page that animates repeats itself constantly. A repeat must not restart the wait, or the
         // snapshot would never come while the animation runs.
@@ -123,10 +126,11 @@ final class EdgeChangeRouter: NSObject, WKScriptMessageHandler {
     /// section, often just the page's backdrop. Pinned beats scrolling, a band beats a column, then the
     /// wider wins. Anything else, a card or a column passing by, leaves the page's own background.
     ///
-    /// The report, sent when it changes, is "r,g,b", or "page", or "unknown:<n>" when a band is an image,
-    /// gradient, non-sRGB color or other painted element, n numbering it so the native side can
-    /// remember what it looked like. A video never counts, and neither does a painted element narrower
-    /// than a band, since a snapshot could not tell its part of the edge from the rest.
+    /// The report, sent when it changes, is "r,g,b", "page", or "unknown:<n>" when a band is an image,
+    /// gradient, backdrop-filtered surface, non-sRGB color or other painted element, n numbering it so
+    /// the native side can remember what it looked like. Ordinary translucent colors are composited
+    /// through the elements behind them. A video never counts, and neither does a painted element
+    /// narrower than a band, since a snapshot could not tell its part of the edge from the rest.
     ///
     /// Asking where elements are makes the page bring its layout up to date, which is real work on a
     /// busy page, so probing is kept rare: on load, resize and scroll only, at most ten times a second,
@@ -173,7 +177,9 @@ final class EdgeChangeRouter: NSObject, WKScriptMessageHandler {
                     if (element.tagName === 'VIDEO') return null;
                     if (painted.test(element.tagName)) return result(unknown(element), element, true);
                     const style = getComputedStyle(element);
-                    if (style.backgroundImage !== 'none') return result(unknown(element), element, true);
+                    const backdrop = style.backdropFilter || style.webkitBackdropFilter || 'none';
+                    if (style.backgroundImage !== 'none' || backdrop !== 'none')
+                        return result(unknown(element), element, true);
                     const color = style.backgroundColor;
                     if (!color.startsWith('rgb')) return result(unknown(element), element, true);
                     const [red, green, blue, alpha = 1] = color.match(/[\\d.]+/g).map(Number);
@@ -182,6 +188,14 @@ final class EdgeChangeRouter: NSObject, WKScriptMessageHandler {
                     if (!owner && Number(style.opacity) > 0 && style.visibility !== 'hidden') front.push(element);
                     r += cover * red; g += cover * green; b += cover * blue; a += cover;
                     if (a > 0.99) return result([r, g, b].map(v => Math.round(v / a)).join(','), element, false);
+                }
+                // A transparent document canvas still paints in the system color scheme. Blend the
+                // accumulated layers into that canvas instead of discarding their visible tint.
+                if (a > 0 && owner) {
+                    const dark = getComputedStyle(document.documentElement).colorScheme.includes('dark')
+                        || matchMedia('(prefers-color-scheme: dark)').matches;
+                    const canvas = dark ? 0 : 255;
+                    return result([r, g, b].map(v => Math.round(v + (1 - a) * canvas)).join(','), owner, false);
                 }
                 return null;
             }

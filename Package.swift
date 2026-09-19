@@ -3,10 +3,19 @@ import PackageDescription
 
 let package = Package(
     name: "Browser",
-    platforms: [.macOS(.v14)],
+    platforms: [.macOS("15.4")],
     targets: [
-        // The icon is packaged by ./x app, not compiled into the executable.
-        .executableTarget(name: "Browser", exclude: ["AppIcon.icon"], swiftSettings: [.swiftLanguageMode(.v5)]),
-        .testTarget(name: "BrowserTests", dependencies: ["Browser"], swiftSettings: [.swiftLanguageMode(.v5)]),
+        // Website sources and the icon are packaged separately from the executable.
+        .executableTarget(
+            name: "Browser",
+            path: "Sources",
+            exclude: ["UI/aero.icon", "Website"],
+            resources: [.copy("Extensions/Extensions.html"), .copy("UI/Settings.html")],
+            swiftSettings: [.swiftLanguageMode(.v5)]),
+        .testTarget(
+            name: "BrowserTests",
+            dependencies: ["Browser"],
+            path: "Tests",
+            swiftSettings: [.swiftLanguageMode(.v5)]),
     ]
 )

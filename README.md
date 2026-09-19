@@ -1,7 +1,7 @@
 # Aero
 
 Aero is a small, fast macOS browser. It is a native AppKit shell around the system's
-WebKit, with no package dependencies. The app is about 1 MB.
+WebKit, with no package dependencies. The executable is under 1 MB.
 
 - The whole interface is one strip with the traffic lights, pinned tabs and tabs.
 - There is no address bar. A new tab is a single centered field that completes from your
@@ -9,6 +9,10 @@ WebKit, with no package dependencies. The app is about 1 MB.
 - The strip takes the color of the page's header, hero or sidebar, so it reads as part of the page.
 - The active tab doubles as the loading bar.
 - Pinned tabs show as monograms, can't be closed, and come back on the next launch.
+- Downloads go to the Downloads folder and appear at the right edge of the strip.
+- The built-in extensions catalog installs signed app extensions such as 1Password, and local
+  WebExtensions can be installed from an unpacked directory or ZIP.
+- Website sign-ins share one persistent browsing session. Aero has no browser profiles.
 - Reload keeps your place. The page stays still and the strip keeps its color while the new
   copy loads, then the two are lined up before you see it.
 
@@ -16,7 +20,7 @@ Aero is early in development.
 
 ## Build
 
-Aero needs macOS 14 or newer and a Swift 6 toolchain. The Command Line Tools are enough;
+Aero needs macOS 15.4 or newer and a Swift 6 toolchain. The Command Line Tools are enough;
 Xcode is not required.
 
 ```sh
@@ -26,7 +30,7 @@ Xcode is not required.
 
 The product name lives in one place, `NAME` in `x`.
 
-The app icon is `Sources/Browser/AppIcon.icon`, an Icon Composer document. With Xcode installed the build
+The app icon is `Sources/UI/aero.icon`, an Icon Composer document. With Xcode installed the build
 compiles it with `actool`, and macOS renders its Default, Dark, Clear and Tinted looks.
 Without Xcode it falls back to a plain `.icns` of the Default look, rendered by Icon
 Composer.
@@ -37,6 +41,8 @@ Composer.
 |---|---|
 | ⌘T / ⌘W | new tab / close tab |
 | ⌘L | edit the address |
+| ⌘F | find text on the page |
+| ⌘P | print the page |
 | ⌘D | pin or unpin the current tab, also in the tab's context menu |
 | ⌘[ / ⌘] | back / forward, also the arrows in the strip, or swipe |
 | ⌘⇧[ / ⌘⇧] | previous / next tab |
@@ -49,7 +55,9 @@ removes it, and Esc dismisses.
 ## What to expect
 
 Aero renders pages with the same engine as Safari. A page that is slow in Safari is slow
-in Aero, and Chrome extensions do not work. History stays in
+in Aero. Website cookies and sessions persist in WebKit's default data store.
+WebExtensions use WebKit's extension runtime, so extensions that depend on browser-specific
+APIs may not work. History stays in
 `~/Library/Application Support/<bundle id>/history.sqlite` and nothing leaves your Mac.
 
 ## Contributing

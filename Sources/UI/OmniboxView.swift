@@ -10,9 +10,11 @@ import AppKit
 final class OmniboxView: NSView, NSTextFieldDelegate {
     var onNavigate: ((URL) -> Void)?
     var onDismiss: (() -> Void)?
+    var onTextChange: ((String) -> Void)?
 
     private let fieldBox = CardView()
     private let field = NSTextField()
+    private let searchHint = SearchHint()
     private let listBox = CardView()
     /// Clips rows to the list's rounded shape while its height animates; the card itself can't clip
     /// without losing its shadow.
@@ -25,7 +27,7 @@ final class OmniboxView: NSView, NSTextFieldDelegate {
     /// What the user typed, without the inline completion or a row's address filled in over it.
     private var typed = ""
     private var entries: [HistoryEntry] = []
-    /// Index into the rows: history entries first, then the search row.
+    /// Index into the history rows.
     private var selected: Int? { didSet { rows.enumerated().forEach { $1.isSelected = $0 == selected } } }
     private var skipCompletion = false
 
@@ -40,7 +42,10 @@ final class OmniboxView: NSView, NSTextFieldDelegate {
         field.cell?.isScrollable = true
         field.cell?.wraps = false
         field.delegate = self
-        fieldBox.addSubview(field)
+        searchHint.font = .systemFont(ofSize: 13)
+        searchHint.textColor = .tertiaryLabelColor
+        searchHint.isHidden = true
+        [field, searchHint].forEach(fieldBox.addSubview)
         listBox.alphaValue = 0
         rowsClip.wantsLayer = true
         rowsClip.layer?.cornerRadius = 12
@@ -60,28 +65,34 @@ final class OmniboxView: NSView, NSTextFieldDelegate {
         layer?.backgroundColor = isOverPage ? nil : NSColor.textBackgroundColor.cgColor
     }
 
-    /// Shows the field with `text` selected and takes keyboard focus; the field fades in while rising
-    /// into place. `overPage` makes the backdrop transparent and dismissible; otherwise it is the opaque
-    /// blank-tab page, which is there at once so only the field animates. When the field is already up,
-    /// as when opening one new tab after another, it stays where it is instead of rising again.
+    /// Shows the field with `text` selected and takes keyboard focus. In an already visible window the
+    /// field fades in while rising into place; at app startup it is present in the first frame. `overPage`
+    /// makes the backdrop transparent and dismissible; otherwise it is the opaque blank-tab page. When
+    /// the field is already up, as when opening one new tab after another, it stays where it is.
     func present(text: String, overPage: Bool) {
         let wasShowing = !isHidden && alphaValue == 1 && lift == 0
         isOverPage = overPage
         needsDisplay = true
         field.stringValue = text
-        typed = ""
-        entries = []
+        searchHint.isHidden = true
+        typed = text
+        entries = text.isEmpty ? [] : History.shared.suggestions(for: text)
+        onTextChange?(typed)
         rebuildRows()
         isHidden = false
         alphaValue = 1
 
-        if !wasShowing {
+        if !wasShowing, window?.isVisible == true {
             lift = 8
             arrange(animated: false)
             fieldBox.alphaValue = 0
             lift = 0
             arrange(animated: true)
             animate(0.2) { self.fieldBox.animator().alphaValue = 1 }
+        } else if !wasShowing {
+            lift = 0
+            fieldBox.alphaValue = 1
+            arrange(animated: false)
         }
 
         window?.makeFirstResponder(field)
@@ -120,6 +131,7 @@ final class OmniboxView: NSView, NSTextFieldDelegate {
         var frames: [(NSView, NSRect)] = [(fieldBox, fieldFrame), (listBox, listFrame), (rowsClip, clipFrame)]
 
         field.frame = NSRect(x: 16, y: 12, width: width - 32, height: 18)
+        placeSearchHint()
         for (index, row) in rows.enumerated() {
             let frame = NSRect(x: 5.5, y: 4.5 + CGFloat(index) * 29, width: width - 11, height: 29)
             // A new row starts in its place; only rows that were already showing slide.
@@ -154,6 +166,7 @@ final class OmniboxView: NSView, NSTextFieldDelegate {
     func controlTextDidChange(_ notification: Notification) {
         guard let editor = field.currentEditor() as? NSTextView else { return }
         typed = editor.string
+        onTextChange?(typed)
         entries = History.shared.suggestions(for: typed)
 
         let caretAtEnd = editor.selectedRange().location == (typed as NSString).length
@@ -168,6 +181,7 @@ final class OmniboxView: NSView, NSTextFieldDelegate {
             rebuildRows()
         }
         skipCompletion = false
+        updateSearchHint()
     }
 
     func control(_ control: NSControl, textView: NSTextView, doCommandBy selector: Selector) -> Bool {
@@ -194,9 +208,10 @@ final class OmniboxView: NSView, NSTextFieldDelegate {
         guard !rows.isEmpty else { return }
         let index = min(max((selected ?? (step > 0 ? -1 : rows.count)) + step, 0), rows.count - 1)
         selected = index
-        let text = index < entries.count ? entries[index].display : typed
+        let text = entries[index].display
         field.stringValue = text
         field.currentEditor()?.selectedRange = NSRange(location: (text as NSString).length, length: 0)
+        updateSearchHint()
     }
 
     private func commit() {
@@ -204,17 +219,15 @@ final class OmniboxView: NSView, NSTextFieldDelegate {
         if let url = AddressInput.url(for: field.stringValue) { onNavigate?(url) }
     }
 
-    private func activate(row index: Int) {
-        onNavigate?(index < entries.count ? entries[index].url : AddressInput.searchURL(for: typed))
-    }
+    private func activate(row index: Int) { onNavigate?(entries[index].url) }
 
-    /// Brings the rows in line with `entries` and `typed`: one per history entry, plus a search row
-    /// whenever there is text. Rows for suggestions that are still offered are kept, so they hold still
-    /// or slide to their new place; new ones fade in and dropped ones fade out.
+    /// Brings the rows in line with history. The field itself owns typed text and its inline completion,
+    /// so rows only show distinct destinations. Surviving rows hold still or slide to their new place;
+    /// new ones fade in and dropped ones fade out.
     private func rebuildRows(select: Int? = nil) {
-        var items = entries.map { (key: $0.url.absoluteString, primary: $0.display, secondary: $0.title) }
-        if !typed.trimmingCharacters(in: .whitespaces).isEmpty {
-            items.append((key: SuggestionRow.searchKey, primary: typed, secondary: "Google"))
+        let items = entries.map {
+            let title = $0.title.trimmingCharacters(in: .whitespacesAndNewlines)
+            return (key: $0.url.absoluteString, primary: title.isEmpty ? $0.display : title, secondary: title.isEmpty ? "" : $0.display)
         }
 
         let existing = Dictionary(rows.map { ($0.key, $0) }, uniquingKeysWith: { first, _ in first })
@@ -236,6 +249,7 @@ final class OmniboxView: NSView, NSTextFieldDelegate {
             row.onClick = { [weak self] in self?.activate(row: index) }
         }
         selected = select
+        updateSearchHint()
 
         let animated = !isHidden
         arrange(animated: animated)
@@ -251,20 +265,54 @@ final class OmniboxView: NSView, NSTextFieldDelegate {
             leaving.forEach { $0.removeFromSuperview() }
         }
     }
+
+    /// Shows the search provider after a query without adding a duplicate suggestion row.
+    private func updateSearchHint() {
+        let isSearch = AddressInput.url(for: typed).map(AddressInput.isSearchURL) == true
+        searchHint.stringValue = BrowserSettings.searchEngine.name
+        searchHint.isHidden = !isSearch || selected != nil
+        placeSearchHint()
+    }
+
+    private func placeSearchHint() {
+        guard !searchHint.isHidden else { return }
+        let shown = (field.currentEditor() as? NSTextView)?.string ?? field.stringValue
+        let width = (shown as NSString).size(withAttributes: [.font: field.font!]).width
+        // NSTextFieldCell keeps drawing insets outside its intrinsic text measurement. Leave enough
+        // room for both insets so the final "e" is never clipped at Retina pixel boundaries.
+        let hintWidth = ceil(searchHint.intrinsicContentSize.width) + 12
+        guard width + 8 + hintWidth < field.frame.width else {
+            searchHint.isHidden = true
+            return
+        }
+        let x = min(field.frame.minX + width + 8, field.frame.maxX - hintWidth)
+        searchHint.frame = NSRect(x: x, y: field.frame.minY + 1, width: hintWidth, height: 17)
+    }
 }
 
-/// One suggestion: an address with its page title, or the typed text as a web search. `key` identifies
-/// the suggestion across keystrokes so its row can be kept.
-private final class SuggestionRow: NSView {
-    static let searchKey = "search"
+/// A dim provider label that lets clicks continue through to the editable address field.
+private final class SearchHint: NSTextField {
+    init() {
+        super.init(frame: .zero)
+        stringValue = BrowserSettings.searchEngine.name
+        isBordered = false
+        drawsBackground = false
+        isEditable = false
+        isSelectable = false
+    }
 
+    required init?(coder: NSCoder) { fatalError("not used") }
+    override func hitTest(_ point: NSPoint) -> NSView? { nil }
+}
+
+/// One history suggestion. `key` identifies it across keystrokes so its row can be kept.
+private final class SuggestionRow: NSView {
     let key: String
     var onClick: (() -> Void)?
     /// Shown by contrast alone: the selected or hovered row's text is full strength, the rest recede.
     var isSelected = false { didSet { if isSelected != oldValue { updateEmphasis() } } }
     private var isHovered = false { didSet { if isHovered != oldValue { updateEmphasis() } } }
 
-    private let icon: NSImageView?
     private let primary: NSTextField
     private let secondary: NSTextField
 
@@ -272,19 +320,14 @@ private final class SuggestionRow: NSView {
         self.key = key
         self.primary = NSTextField(labelWithString: primary)
         self.secondary = NSTextField(labelWithString: secondary)
-        icon =
-            key == Self.searchKey
-            ? NSImageView(image: NSImage(systemSymbolName: "magnifyingglass", accessibilityDescription: "Search")!) : nil
         super.init(frame: .zero)
-        icon?.symbolConfiguration = .init(pointSize: 11, weight: .regular)
-        icon?.contentTintColor = .secondaryLabelColor
         self.primary.wantsLayer = true
         self.primary.font = .systemFont(ofSize: 13)
         self.primary.textColor = .secondaryLabelColor
         self.secondary.font = .systemFont(ofSize: 13)
         self.secondary.textColor = .tertiaryLabelColor
         for label in [self.primary, self.secondary] { label.lineBreakMode = .byTruncatingTail }
-        [icon, self.primary, self.secondary].compactMap { $0 }.forEach(addSubview)
+        [self.primary, self.secondary].forEach(addSubview)
         addTrackingArea(
             NSTrackingArea(
                 rect: .zero, options: [.mouseEnteredAndExited, .activeInActiveApp, .inVisibleRect],
@@ -313,11 +356,7 @@ private final class SuggestionRow: NSView {
 
     override func layout() {
         super.layout()
-        var x: CGFloat = 10
-        if let icon {
-            icon.frame = NSRect(x: x, y: 8, width: 14, height: 14)
-            x += 22
-        }
+        let x: CGFloat = 10
         let available = bounds.width - x - 10
         let primaryWidth = min(primary.intrinsicContentSize.width, available)
         primary.frame = NSRect(x: x, y: 7, width: primaryWidth, height: 16)

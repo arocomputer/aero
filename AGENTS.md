@@ -6,9 +6,8 @@ Instructions for agents and contributors editing this repository. Read
 Aero is a small, fast macOS browser. It is a native AppKit shell around the system's
 WebKit, with no package dependencies. Its interface is one strip holding the traffic
 lights, pinned tabs and tabs. There is no address bar; a centered field appears on a new
-tab and on Command-L. Aero is the browser and Aro is the company that makes it; the
-repository is `arocomputer/aro`. Capitalize both in prose. The Swift module is `Browser`,
-so a rename never touches the sources.
+tab and on Command-L. The repository is `arocomputer/aero`. The Swift module is
+`Browser`, so a product rename never touches the sources.
 
 ## Working style
 
@@ -33,7 +32,7 @@ so a rename never touches the sources.
 ./x run        # build build/Aero.app and open it
 ```
 
-Aero needs macOS 14 or newer and a Swift 6 toolchain. The Command Line Tools are enough;
+Aero needs macOS 15.4 or newer and a Swift 6 toolchain. The Command Line Tools are enough;
 Xcode is not required. Python 3 runs repository tooling. CI runs the same `./x` commands
 on macOS.
 
@@ -45,11 +44,11 @@ place. `./x test` runs the unit tests. `./x app` builds the release bundle, fill
 Required checks are `Validate` from Quality and `Build and Test` from App. Keep those
 names aligned with repository rules.
 
-The icon is `Sources/Browser/AppIcon.icon`, an Icon Composer document. That format is a
+The icon is `Sources/UI/aero.icon`, an Icon Composer document. That format is a
 folder holding `icon.json` and its artwork; Finder shows it as one file. With Xcode installed, `scripts/icon.sh`
-compiles it with `actool` and macOS renders the Default, Dark, Clear and Tinted looks.
+compiles it with `actool` into `Assets.car`, and macOS renders the Default, Dark, Clear and Tinted looks.
 Without Xcode it renders a plain `.icns` of the Default look with Icon Composer's `ictool`.
-Nobody has run the `actool` path yet. CI has Xcode, so it will be the first to try it.
+The `actool` path is covered by `./x app` on a Mac with Xcode installed.
 
 ## Where things live
 
@@ -57,20 +56,14 @@ Nobody has run the `actool` path yet. CI has Xcode, so it will be the first to t
 Package.swift                   one executable target, Browser, and its tests
 Info.plist                      bundle template; ./x app fills __NAME__ and __BUNDLE_ID__
 x                               contributor and CI commands; also holds the product name
-Sources/Website/                the website; not a Swift target, so SwiftPM ignores it
-Sources/Browser/
-  AppDelegate.swift             entry point, menu, addresses opened by other apps
-  BrowserWindowController.swift window, tabs, pins, menu actions, chrome color, traffic lights
-  Tab.swift                     web view, navigation, page dialogs, pinned state
-  PageEdge.swift                color along a page's top edge; the script that reports it
-  ReloadHold.swift              hides a reload's jump: still picture, anchor, realignment
-  EdgeColor.swift               dominant color of an edge snapshot
-  TabStripView.swift            pinned tabs, tab pills, load progress, strip motion
-  OmniboxView.swift             address field, suggestions, their motion
-  History.swift                 SQLite history and suggestion ranking
-  AddressInput.swift            typed text to address or search
-  AppIcon.icon/                 Icon Composer source for the app icon; excluded from the target
-Tests/BrowserTests/             unit tests for the types that hold rules
+Sources/Core/                   entry point, menus, app paths, addresses and history
+Sources/Downloads/              WebKit downloads, destinations and current-session state
+Sources/Extensions/             catalog, installed WebExtensions, permissions, actions and popups
+Sources/UI/                     windows, tab strip, address field and app icon
+  aero.icon/                    Icon Composer source for the app icon; excluded from the target
+Sources/Web/                    web views, page-edge color sampling, pins and reload hold
+Sources/Website/                the website; excluded from the Swift target
+Tests/                          focused unit tests, grouped like the source tree
 scripts/                        guard, commit hooks and their tests, icon packaging
 ```
 
@@ -96,7 +89,7 @@ not raise test windows over their work without asking.
 - The engine is the system's WebKit. How fast a page renders and scrolls is WebKit's
   doing. Before blaming Aero for a slow page, compare Safari and a bare `WKWebView` in a
   plain window on the same Mac. If those are slow too, no change here will fix it.
-- Aero runs one script inside pages, the top-edge probe in `PageEdge.swift`. Anything that
+- Aero runs one script inside pages, the top-edge probe in `Sources/Web/PageEdge.swift`. Anything that
   runs inside a page or makes it paint costs the page. The probe runs on load, resize and
   scroll, at most ten times a second, and never listens to animations. A pixel snapshot
   freezes the page while it paints, up to half a second on a page full of canvases, so
@@ -128,6 +121,8 @@ not raise test windows over their work without asking.
   interrupted. Typed text is never animated.
 - History is one local SQLite table, written on the main thread with a write-ahead log.
   Nothing leaves the Mac. Search result pages are not recorded.
+- Website accounts use one persistent WebKit data store. Aero has no browser profiles or
+  separate identity layer.
 - The product name lives in `x` and the bundle. Do not hardcode it in sources.
 
 ## Naming and documentation
