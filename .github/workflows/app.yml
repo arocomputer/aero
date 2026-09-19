@@ -23,6 +23,6 @@ jobs:
       - name: Verify the bundle
         run: |
           codesign --verify --deep build/Aero.app
-          test -f build/Aero.app/Contents/Resources/Assets.car || \
-            test -f build/Aero.app/Contents/Resources/AppIcon.icns
+          test -f build/Aero.app/Contents/Resources/Assets.car
+          test -f build/Aero.app/Contents/Resources/aero.icns
           test -d build/Aero.app/Contents/Resources/Browser_Browser.bundle
