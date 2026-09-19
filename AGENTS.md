@@ -44,7 +44,8 @@ place. `./x test` runs the unit tests. `./x app` builds the release bundle, fill
 Required checks are `Validate` from Quality and `Build and Test` from App. Keep those
 names aligned with repository rules.
 
-The icon is `AppIcon.icon`, an Icon Composer file. With Xcode installed, `scripts/icon.sh`
+The icon is `Sources/Browser/AppIcon.icon`, an Icon Composer document. That format is a
+folder holding `icon.json` and its artwork; Finder shows it as one file. With Xcode installed, `scripts/icon.sh`
 compiles it with `actool` and macOS renders the Default, Dark, Clear and Tinted looks.
 Without Xcode it renders a plain `.icns` of the Default look with Icon Composer's `ictool`.
 Nobody has run the `actool` path yet. CI has Xcode, so it will be the first to try it.
@@ -54,18 +55,19 @@ Nobody has run the `actool` path yet. CI has Xcode, so it will be the first to t
 ```text
 Package.swift                   one executable target, Browser, and its tests
 Info.plist                      bundle template; ./x app fills __NAME__ and __BUNDLE_ID__
-AppIcon.icon/                   Icon Composer source for the app icon
 x                               contributor and CI commands; also holds the product name
 Sources/Browser/
   AppDelegate.swift             entry point, menu, addresses opened by other apps
   BrowserWindowController.swift window, tabs, pins, menu actions, chrome color, traffic lights
   Tab.swift                     web view, navigation, page dialogs, pinned state
   PageEdge.swift                color along a page's top edge; the script that reports it
+  ReloadHold.swift              hides a reload's jump: still picture, anchor, realignment
   EdgeColor.swift               dominant color of an edge snapshot
   TabStripView.swift            pinned tabs, tab pills, load progress, strip motion
   OmniboxView.swift             address field, suggestions, their motion
   History.swift                 SQLite history and suggestion ranking
   AddressInput.swift            typed text to address or search
+  AppIcon.icon/                 Icon Composer source for the app icon; excluded from the target
 Tests/BrowserTests/             unit tests for the types that hold rules
 scripts/                        guard, commit hooks and their tests, icon packaging
 ```
@@ -101,10 +103,22 @@ not raise test windows over their work without asking.
 - Aro has no package dependencies, and `scripts/guard.py` enforces it. It uses no private
   WebKit API today. Adding either needs a stated reason, evidence that it helps, and for
   private API a run-time lookup that does nothing when the method is gone.
-- The strip has no surface of its own. It shows the color along the page's top edge and
-  switches its appearance to light or dark to stay legible. It never uses a page's
+- The strip has no surface of its own. It takes its color from what touches the page's
+  top edge, but only from two kinds of element. A pinned one, fixed or sticky, such as a
+  sticky header or an app's sidebar, comes first. A band spanning nearly the full width,
+  such as a hero, comes second. Cards and columns scrolling past never count, or the
+  strip would flicker on every feed; without either kind it shows the page's background.
+  It switches its appearance to light or dark to stay legible. It never uses a page's
   declared theme color, which sites often set to a brand color that matches nothing
   under the strip.
+- Reload goes through `ReloadHold`. Sites restore their own scroll position after a
+  reload and shift their layout for a second afterwards, so a plain reload shows the top,
+  jumps back and nudges the text, in every browser. The hold covers the page with a still
+  picture, waits for the new page to settle, lines it up with an anchor element noted
+  beforehand, uncovers, and keeps the anchor in place for 2.5s more. The strip keeps the
+  color it had when the picture was taken for as long as the hold lasts. Its one snapshot
+  is taken before the reload, when a pause costs nothing. Measure before changing its
+  timings: log an element's viewport position through a reload, with and without it.
 - The window is a system toolbar window. Its corners and titlebar height are the
   system's. The traffic lights are the system's buttons drawn larger; do not replace
   them with custom drawing.

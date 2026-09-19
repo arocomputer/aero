@@ -8,7 +8,7 @@ abstraction before adding one.
 ## Getting set up
 
 ```sh
-git clone https://github.com/fschrhunt/aro
+git clone https://github.com/arocomputer/aro
 cd aro
 ./x hooks
 ./x run
@@ -34,7 +34,7 @@ committed diff, so local hooks are not the only verification.
 
 ## Reporting issues
 
-Use the [bug or feature forms](https://github.com/fschrhunt/aro/issues/new/choose).
+Use the [bug or feature forms](https://github.com/arocomputer/aro/issues/new/choose).
 A bug report needs steps, expected and actual behavior, and the affected version or
 commit. For a page that misbehaves, give a public address and say whether Safari does
 the same; Aro uses the same engine, and a problem Safari shares is WebKit's. For slow or
@@ -137,7 +137,7 @@ Never release from a pull request or weaken tag protection to do so.
 
 ## Release notes
 
-[GitHub Releases](https://github.com/fschrhunt/aro/releases) are the published history.
+[GitHub Releases](https://github.com/arocomputer/aro/releases) are the published history.
 Write a short release title and introduction, followed by these groups in order. Omit
 empty groups.
 

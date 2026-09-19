@@ -6,9 +6,11 @@ WebKit, with no package dependencies. The app is about 1 MB.
 - The whole interface is one strip with the traffic lights, pinned tabs and tabs.
 - There is no address bar. A new tab is a single centered field that completes from your
   history, and Command-L brings the same field up over a page.
-- The strip takes the color along the top edge of the page, so it reads as part of it.
+- The strip takes the color of the page's header, hero or sidebar, so it reads as part of the page.
 - The active tab doubles as the loading bar.
 - Pinned tabs show as monograms, can't be closed, and come back on the next launch.
+- Reload keeps your place. The page stays still and the strip keeps its color while the new
+  copy loads, then the two are lined up before you see it.
 
 Aro is early in development.
 
@@ -24,7 +26,7 @@ Xcode is not required.
 
 The product name lives in one place, `NAME` in `x`.
 
-The app icon is `AppIcon.icon`, an Icon Composer file. With Xcode installed the build
+The app icon is `Sources/Browser/AppIcon.icon`, an Icon Composer document. With Xcode installed the build
 compiles it with `actool`, and macOS renders its Default, Dark, Clear and Tinted looks.
 Without Xcode it falls back to a plain `.icns` of the Default look, rendered by Icon
 Composer.

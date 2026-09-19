@@ -4,7 +4,7 @@ labels: [bug]
 body:
   - type: markdown
     attributes:
-      value: Report security-sensitive findings privately using our [security policy](https://github.com/fschrhunt/aro/blob/main/SECURITY.md). Remove private addresses, page content, and history from screenshots and logs.
+      value: Report security-sensitive findings privately using our [security policy](https://github.com/arocomputer/aro/blob/main/SECURITY.md). Remove private addresses, page content, and history from screenshots and logs.
   - type: textarea
     id: behavior
     attributes:
