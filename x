@@ -43,7 +43,7 @@ case "$command" in
     mkdir -p "$APP/Contents/MacOS"
     cp .build/release/Browser "$APP/Contents/MacOS/$NAME"
     sed -e "s/__NAME__/$NAME/g" -e "s/__BUNDLE_ID__/$BUNDLE_ID/g" Info.plist > "$APP/Contents/Info.plist"
-    scripts/icon.sh AppIcon.icon "$APP/Contents/Resources"
+    scripts/icon.sh Sources/Browser/AppIcon.icon "$APP/Contents/Resources"
     codesign --force --sign - "$APP"
     ;;
   run)
