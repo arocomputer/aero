@@ -61,8 +61,7 @@ Sources/Downloads/              WebKit downloads, destinations and current-sessi
 Sources/Extensions/             catalog, installed WebExtensions, permissions, actions and popups
 Sources/UI/                     windows, tab strip, address field and app icon
   aero.icon/                    Icon Composer source for the app icon; excluded from the target
-Sources/Web/                    web views, page-edge color sampling, pins and reload hold
-Sources/Website/                the website; excluded from the Swift target
+Sources/Website/                web views, page-edge color sampling, pins and reload hold
 Tests/                          focused unit tests, grouped like the source tree
 scripts/                        guard, commit hooks and their tests, icon packaging
 ```
@@ -89,7 +88,7 @@ not raise test windows over their work without asking.
 - The engine is the system's WebKit. How fast a page renders and scrolls is WebKit's
   doing. Before blaming Aero for a slow page, compare Safari and a bare `WKWebView` in a
   plain window on the same Mac. If those are slow too, no change here will fix it.
-- Aero runs one script inside pages, the top-edge probe in `Sources/Web/PageEdge.swift`. Anything that
+- Aero runs one script inside pages, the top-edge probe in `Sources/Website/PageEdge.swift`. Anything that
   runs inside a page or makes it paint costs the page. The probe runs on load, resize and
   scroll, at most ten times a second, and never listens to animations. A pixel snapshot
   freezes the page while it paints, up to half a second on a page full of canvases, so
