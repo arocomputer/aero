@@ -1,0 +1,377 @@
+import AppKit
+
+/// The single strip of chrome, filling the window's titlebar: pinned tabs as monograms, then tab pills,
+/// then a "+" that shows while the pointer is over the strip. Laid out by hand; empty areas drag the window.
+/// Changes to the tabs animate: the active highlight slides between items, new ones slide in, the rest make room.
+/// It has no surface of its own: it shows `pageColor`, the color along the page's top edge, and its
+/// `appearance` is set light or dark to stay legible on it.
+final class TabStripView: NSView {
+    weak var controller: BrowserWindowController?
+    /// Space reserved on the left for the traffic lights.
+    var leadingInset: CGFloat = 86 { didSet { if leadingInset != oldValue { needsLayout = true } } }
+
+    /// The color along the page's top edge, shown behind the strip; nil shows the window through.
+    /// Every change glides over a moment, so the strip reads as one surface easing between the page's
+    /// colors instead of stepping through samples.
+    var pageColor: NSColor? {
+        didSet {
+            guard pageColor != oldValue else { return }
+            NSAnimationContext.runAnimationGroup { context in
+                context.duration = 0.18
+                context.allowsImplicitAnimation = true
+                layer?.backgroundColor = pageColor?.cgColor
+            }
+        }
+    }
+
+    private var pinButtons: [PinButton] = []
+    private var pills: [TabPillView] = []
+    private var entering: [NSView] = []
+    private var activeItem: NSView?
+    /// What the last animated arrangement was made for; see `update`.
+    private var arranged: [AnyHashable] = []
+    private let highlight = HighlightView()
+    private let plusButton = StripButton(symbol: "plus", pointSize: 12)
+
+    override init(frame: NSRect) {
+        super.init(frame: frame)
+        wantsLayer = true
+        addSubview(highlight)
+
+        plusButton.onClick = { [weak self] in self?.controller?.newTab(nil) }
+        plusButton.alphaValue = 0
+        addSubview(plusButton)
+        addTrackingArea(
+            NSTrackingArea(
+                rect: .zero, options: [.mouseEnteredAndExited, .activeInActiveApp, .inVisibleRect],
+                owner: self))
+    }
+
+    required init?(coder: NSCoder) { fatalError("not used") }
+
+    override var isFlipped: Bool { true }
+    override var mouseDownCanMoveWindow: Bool { true }
+
+    /// Brings monograms and pills in line with the controller's tabs (pinned ones first), animating what moved.
+    func update(tabs: [Tab], active: Tab?) {
+        let pinned = tabs.filter(\.isPinned), ordinary = tabs.filter { !$0.isPinned }
+        pinButtons = resized(pinButtons, to: pinned.count) { PinButton() }
+        pills = resized(pills, to: ordinary.count) { TabPillView() }
+        activeItem = nil
+
+        for (button, tab) in zip(pinButtons, pinned) {
+            button.letter = tab.monogram
+            button.toolTip = tab.title
+            button.isActive = tab === active
+            button.onSelect = { [weak controller, weak tab] in tab.map { controller?.select($0) } }
+            button.onUnpin = { [weak controller, weak tab] in tab.map { controller?.setPinned(false, tab: $0) } }
+            if tab === active { activeItem = button }
+        }
+        for (pill, tab) in zip(pills, ordinary) {
+            pill.title = tab.title
+            pill.isActive = tab === active
+            pill.progress = tab.webView.estimatedProgress
+            pill.isLoading = tab.webView.isLoading
+            pill.canPin = !tab.isBlank
+            pill.onSelect = { [weak controller, weak tab] in tab.map { controller?.select($0) } }
+            pill.onClose = { [weak controller, weak tab] in tab.map { controller?.close($0) } }
+            pill.onPin = { [weak controller, weak tab] in tab.map { controller?.setPinned(true, tab: $0) } }
+            if tab === active { activeItem = pill }
+        }
+        // This runs on every title and progress tick of every tab. Only the number of items, which one
+        // is active and the space available move anything, so the rest of the time frames are left alone.
+        let arrangement: [AnyHashable] = [pinButtons.count, pills.count, activeItem.map(ObjectIdentifier.init), leadingInset, bounds.width]
+        if arrangement != arranged || !entering.isEmpty {
+            arranged = arrangement
+            arrange(animated: bounds.width > 0)
+        }
+    }
+
+    /// Grows or shrinks a list of item views to `count`, adding and removing them from the strip.
+    private func resized<Item: NSView>(_ items: [Item], to count: Int, make: () -> Item) -> [Item] {
+        var items = items
+        while items.count > count { items.removeLast().removeFromSuperview() }
+        while items.count < count {
+            let item = make()
+            items.append(item)
+            entering.append(item)
+            addSubview(item)
+        }
+        return items
+    }
+
+    override func layout() {
+        super.layout()
+        arrange(animated: false)
+    }
+
+    /// Positions everything. Frames that are already right are left alone, so a plain layout pass
+    /// never cuts an animation short.
+    private func arrange(animated: Bool) {
+        var targets: [(NSView, NSRect)] = []
+        var x = leadingInset
+        let y = (bounds.height - Metrics.itemHeight) / 2
+        for button in pinButtons {
+            targets.append((button, NSRect(x: x, y: y, width: Metrics.pinWidth, height: Metrics.itemHeight)))
+            x += Metrics.pinWidth + Metrics.gap
+        }
+        if !pinButtons.isEmpty { x += 4 }
+
+        let available = bounds.width - x - 48
+        let width = min(Metrics.pillWidth, max(44, available / CGFloat(max(pills.count, 1)) - Metrics.gap)).rounded(.down)
+        for pill in pills {
+            targets.append((pill, NSRect(x: x, y: y, width: width, height: Metrics.itemHeight)))
+            x += width + Metrics.gap
+        }
+        targets.append((plusButton, NSRect(x: x + 2, y: y, width: Metrics.itemHeight, height: Metrics.itemHeight)))
+        let highlightTarget = targets.first { $0.0 === activeItem }?.1 ?? .zero
+
+        guard animated else {
+            for (view, frame) in targets + [(highlight, highlightTarget)] where view.frame != frame { view.frame = frame }
+            entering = []
+            return
+        }
+
+        for view in entering {
+            guard let target = targets.first(where: { $0.0 === view })?.1 else { continue }
+            view.frame = target.offsetBy(dx: -18, dy: 0)
+            view.alphaValue = 0
+        }
+        NSAnimationContext.runAnimationGroup { context in
+            context.duration = 0.26
+            context.timingFunction = CAMediaTimingFunction(controlPoints: 0.2, 0.9, 0.3, 1)
+            for (view, frame) in targets where view.frame != frame { view.animator().frame = frame }
+            entering.forEach { $0.animator().alphaValue = 1 }
+        }
+        // The highlight overshoots slightly and settles, which reads as a light spring.
+        NSAnimationContext.runAnimationGroup { context in
+            context.duration = 0.34
+            context.timingFunction = CAMediaTimingFunction(controlPoints: 0.3, 1.35, 0.5, 1)
+            if highlight.frame.isEmpty { highlight.frame = highlightTarget } else { highlight.animator().frame = highlightTarget }
+        }
+        entering = []
+    }
+
+    override func mouseEntered(with event: NSEvent) { plusButton.animator().alphaValue = 1 }
+    override func mouseExited(with event: NSEvent) { plusButton.animator().alphaValue = 0 }
+}
+
+/// The active tab's background, which slides between items.
+private final class HighlightView: NSView {
+    override init(frame: NSRect) {
+        super.init(frame: frame)
+        wantsLayer = true
+        layer?.cornerRadius = Metrics.radius
+        layer?.cornerCurve = .continuous
+    }
+
+    required init?(coder: NSCoder) { fatalError("not used") }
+
+    override var wantsUpdateLayer: Bool { true }
+
+    override func updateLayer() {
+        layer?.backgroundColor = NSColor.textColor.withAlphaComponent(0.08).cgColor
+    }
+}
+
+/// Sizes of the strip's items. The proportions come from the reference design, scaled up to sit in the
+/// system's regular 52pt toolbar instead of its 44pt one.
+private enum Metrics {
+    static let itemHeight: CGFloat = 30
+    static let pillWidth: CGFloat = 208
+    static let pinWidth: CGFloat = 32
+    static let gap: CGFloat = 3
+    static let radius: CGFloat = 10
+    static let titleFont = NSFont.systemFont(ofSize: 13)
+    static let monogramFont = NSFont.systemFont(ofSize: 13, weight: .medium)
+}
+
+/// One ordinary tab in the strip. The strip draws the active tab's background; the pill itself shows a
+/// hover tint, a close "×" on hover, and loading as a darker fill that sweeps left to right with
+/// `progress`. The title always leaves room for the close button, so it never reflows.
+final class TabPillView: NSView {
+    var title = "" { didSet { label.stringValue = title; toolTip = title } }
+    var isActive = false { didSet { needsDisplay = true } }
+    var isLoading = false { didSet { if isLoading != oldValue { fill.animator().alphaValue = isLoading ? 1 : 0 } } }
+    var progress: Double = 0 { didSet { if progress != oldValue { updateFill(animated: progress > oldValue) } } }
+    /// Whether the context menu offers pinning; a blank tab has nothing to pin.
+    var canPin = true
+    var onSelect: (() -> Void)?
+    var onClose: (() -> Void)? { didSet { closeButton.onClick = onClose } }
+    var onPin: (() -> Void)?
+
+    private let fill = NSView()
+    private let label = NSTextField(labelWithString: "")
+    private let closeButton = StripButton(symbol: "xmark", pointSize: 8)
+    private var isHovered = false {
+        didSet {
+            needsDisplay = true
+            closeButton.animator().alphaValue = isHovered ? 1 : 0
+        }
+    }
+
+    init() {
+        super.init(frame: .zero)
+        wantsLayer = true
+        layer?.cornerRadius = Metrics.radius
+        layer?.cornerCurve = .continuous
+        layer?.masksToBounds = true
+
+        fill.wantsLayer = true
+        fill.alphaValue = 0
+        label.font = Metrics.titleFont
+        label.lineBreakMode = .byTruncatingTail
+        closeButton.alphaValue = 0
+        [fill, label, closeButton].forEach(addSubview)
+
+        addTrackingArea(
+            NSTrackingArea(
+                rect: .zero, options: [.mouseEnteredAndExited, .activeInActiveApp, .inVisibleRect],
+                owner: self))
+    }
+
+    required init?(coder: NSCoder) { fatalError("not used") }
+
+    override var isFlipped: Bool { true }
+    override var mouseDownCanMoveWindow: Bool { false }
+    override var wantsUpdateLayer: Bool { true }
+    override func acceptsFirstMouse(for event: NSEvent?) -> Bool { true }
+
+    /// Everything but the close button counts as the pill, so the title can't swallow clicks.
+    override func hitTest(_ point: NSPoint) -> NSView? {
+        guard let hit = super.hitTest(point) else { return nil }
+        return hit === closeButton && isHovered ? hit : self
+    }
+
+    override func updateLayer() {
+        layer?.backgroundColor = NSColor.textColor.withAlphaComponent(isHovered && !isActive ? 0.04 : 0).cgColor
+        fill.layer?.backgroundColor = NSColor.textColor.withAlphaComponent(0.07).cgColor
+        label.textColor = isActive ? .textColor : NSColor.textColor.withAlphaComponent(0.57)
+    }
+
+    override func layout() {
+        super.layout()
+        label.frame = NSRect(x: 12, y: 7, width: max(0, bounds.width - 40), height: 16)
+        closeButton.frame = NSRect(x: bounds.width - 25, y: 7, width: 16, height: 16)
+        updateFill(animated: false)
+    }
+
+    override func menu(for event: NSEvent) -> NSMenu? {
+        let menu = NSMenu()
+        if canPin { menu.addItem(withTitle: "Pin Tab", action: #selector(pinClicked), keyEquivalent: "").target = self }
+        menu.addItem(withTitle: "Close Tab", action: #selector(closeClicked), keyEquivalent: "").target = self
+        return menu
+    }
+
+    override func mouseEntered(with event: NSEvent) { isHovered = true }
+    override func mouseExited(with event: NSEvent) { isHovered = false }
+    override func mouseDown(with event: NSEvent) { onSelect?() }
+    override func otherMouseDown(with event: NSEvent) { onClose?() }
+
+    @objc private func pinClicked() { onPin?() }
+    @objc private func closeClicked() { onClose?() }
+
+    private func updateFill(animated: Bool) {
+        let frame = NSRect(x: 0, y: 0, width: bounds.width * progress, height: bounds.height)
+        if animated {
+            fill.animator().frame = frame
+        } else {
+            fill.frame = frame
+        }
+    }
+}
+
+/// A pinned tab, shown as the first letter of its site. Click selects it; the context menu unpins it.
+final class PinButton: NSView {
+    var letter = "" { didSet { label.stringValue = letter } }
+    var isActive = false { didSet { needsDisplay = true } }
+    var onSelect: (() -> Void)?
+    var onUnpin: (() -> Void)?
+    private let label = NSTextField(labelWithString: "")
+
+    init() {
+        super.init(frame: .zero)
+        wantsLayer = true
+        layer?.cornerRadius = Metrics.radius
+        layer?.cornerCurve = .continuous
+        label.font = Metrics.monogramFont
+        label.alignment = .center
+        addSubview(label)
+
+        let menu = NSMenu()
+        menu.addItem(withTitle: "Unpin Tab", action: #selector(unpinClicked), keyEquivalent: "").target = self
+        self.menu = menu
+    }
+
+    required init?(coder: NSCoder) { fatalError("not used") }
+
+    override var isFlipped: Bool { true }
+    override var mouseDownCanMoveWindow: Bool { false }
+    override var wantsUpdateLayer: Bool { true }
+    override func acceptsFirstMouse(for event: NSEvent?) -> Bool { true }
+    override func hitTest(_ point: NSPoint) -> NSView? { super.hitTest(point) == nil ? nil : self }
+
+    override func updateLayer() {
+        layer?.backgroundColor = NSColor.textColor.withAlphaComponent(0.05).cgColor
+        label.textColor = NSColor.textColor.withAlphaComponent(isActive ? 0.9 : 0.29)
+    }
+
+    override func layout() {
+        super.layout()
+        label.frame = NSRect(x: 0, y: 7, width: bounds.width, height: 16)
+    }
+
+    override func mouseDown(with event: NSEvent) { onSelect?() }
+
+    @objc private func unpinClicked() { onUnpin?() }
+}
+
+/// A small round symbol button for the strip, used for closing a tab and for the new-tab "+". It is a
+/// bare glyph; the gray disc shows only while the pointer is over the button itself.
+final class StripButton: NSView {
+    var onClick: (() -> Void)?
+
+    private let icon: NSImageView
+    private var isHovered = false { didSet { needsDisplay = true } }
+
+    init(symbol: String, pointSize: CGFloat) {
+        let image = NSImage(systemSymbolName: symbol, accessibilityDescription: symbol)!
+            .withSymbolConfiguration(.init(pointSize: pointSize, weight: .semibold))!
+        icon = NSImageView(image: image)
+        super.init(frame: .zero)
+        wantsLayer = true
+        addSubview(icon)
+        addTrackingArea(
+            NSTrackingArea(
+                rect: .zero, options: [.mouseEnteredAndExited, .activeInActiveApp, .inVisibleRect],
+                owner: self))
+    }
+
+    required init?(coder: NSCoder) { fatalError("not used") }
+
+    override var mouseDownCanMoveWindow: Bool { false }
+    override var wantsUpdateLayer: Bool { true }
+    override func acceptsFirstMouse(for event: NSEvent?) -> Bool { true }
+    override func hitTest(_ point: NSPoint) -> NSView? { super.hitTest(point) == nil ? nil : self }
+
+    override func updateLayer() {
+        layer?.backgroundColor = NSColor.textColor.withAlphaComponent(isHovered ? 0.12 : 0).cgColor
+        icon.contentTintColor = NSColor.textColor.withAlphaComponent(0.5)
+    }
+
+    override func layout() {
+        super.layout()
+        layer?.cornerRadius = bounds.height / 2
+        icon.frame = bounds
+    }
+
+    override func mouseEntered(with event: NSEvent) { isHovered = true }
+    override func mouseExited(with event: NSEvent) { isHovered = false }
+
+    /// Claims the click so it doesn't fall through to the pill underneath; the action fires on release.
+    override func mouseDown(with event: NSEvent) {}
+
+    override func mouseUp(with event: NSEvent) {
+        if bounds.contains(convert(event.locationInWindow, from: nil)) { onClick?() }
+    }
+}
