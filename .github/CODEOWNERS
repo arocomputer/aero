@@ -1,0 +1,14 @@
+# Maintainer ownership and paths requiring particular care during review.
+# This file routes review requests; branch protection is configured separately.
+*                                      @fschrhunt
+/Sources/Browser/Tab.swift             @fschrhunt
+/Sources/Browser/PageEdge.swift        @fschrhunt
+/Sources/Browser/AddressInput.swift    @fschrhunt
+/Package.swift                         @fschrhunt
+/Info.plist                            @fschrhunt
+/.github/                              @fschrhunt
+/scripts/                              @fschrhunt
+/x                                     @fschrhunt
+/AGENTS.md                             @fschrhunt
+/CONTRIBUTING.md                       @fschrhunt
+/SECURITY.md                           @fschrhunt
