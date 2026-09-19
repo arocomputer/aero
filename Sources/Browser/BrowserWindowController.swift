@@ -268,24 +268,38 @@ private final class RootView: NSView {
     override var isFlipped: Bool { true }
 
     /// Draws the close, minimize and zoom buttons with 14pt discs instead of the system's 11.7pt, in
-    /// proportion to the strip's 30pt items, keeping them the system's own buttons. Each gets a larger frame while its
-    /// bounds stay at the system size, so AppKit scales its drawing and the whole disc stays clickable.
-    /// They spread out by the same factor from the first one's left edge and center on the strip.
+    /// proportion to the strip's 30pt items, keeping them the system's own buttons. Each gets a larger
+    /// frame around its own center while its bounds stay at the system size, so AppKit scales its drawing
+    /// and the whole disc stays clickable. Their spacing and horizontal positions stay the system's; only
+    /// the size changes, and they center on the strip.
     private func enlargeTrafficLights(of window: NSWindow) {
         let scale: CGFloat = 1.2
         let buttons = [NSWindow.ButtonType.closeButton, .miniaturizeButton, .zoomButton].compactMap(window.standardWindowButton)
         guard buttons.count == 3, let titlebar = buttons[0].superview, !window.styleMask.contains(.fullScreen) else { return }
-        if systemLights.isEmpty { systemLights = buttons.map(\.frame) }
+        if systemLights.isEmpty {
+            systemLights = buttons.map(\.frame)
+            // AppKit puts the buttons back whenever it lays the titlebar out, which a changed window title
+            // is enough to cause. Undoing that at once keeps them from ever being seen out of place.
+            for button in buttons {
+                button.postsFrameChangedNotifications = true
+                NotificationCenter.default.addObserver(
+                    self, selector: #selector(trafficLightMoved), name: NSView.frameDidChangeNotification, object: button)
+            }
+        }
 
         for (button, system) in zip(buttons, systemLights) {
             let size = NSSize(width: system.width * scale, height: system.height * scale)
-            let x = systemLights[0].minX + (system.minX - systemLights[0].minX) * scale
-            let frame = NSRect(x: x, y: (titlebar.bounds.height - size.height) / 2, width: size.width, height: size.height)
+            let frame = NSRect(
+                x: system.midX - size.width / 2, y: (titlebar.bounds.height - size.height) / 2, width: size.width, height: size.height)
             if button.frame != frame {
                 button.frame = frame
                 button.setBoundsSize(system.size)
             }
         }
+    }
+
+    @objc private func trafficLightMoved() {
+        if let window { enlargeTrafficLights(of: window) }
     }
 
     override func layout() {
