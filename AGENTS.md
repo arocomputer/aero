@@ -46,7 +46,7 @@ names aligned with repository rules.
 
 The icon is `Sources/UI/aero.icon`, an Icon Composer document. That format is a
 folder holding `icon.json` and its artwork; Finder shows it as one file. With Xcode installed, `scripts/icon.sh`
-compiles it with `actool` and macOS renders the Default, Dark, Clear and Tinted looks.
+compiles it with `actool` into `Assets.car`, and macOS renders the Default, Dark, Clear and Tinted looks.
 Without Xcode it renders a plain `.icns` of the Default look with Icon Composer's `ictool`.
 The `actool` path is covered by `./x app` on a Mac with Xcode installed.
 
