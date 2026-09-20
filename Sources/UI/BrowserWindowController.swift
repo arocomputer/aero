@@ -16,6 +16,9 @@ final class BrowserWindowController: NSWindowController, NSWindowDelegate, WKWeb
     private let browserMenu = BrowserMenuView()
     private let find = FindView()
     private var scrollMonitor: Any?
+    private var sleepTimer: Timer?
+    /// How far the strip reaches over the web views; see `Tab.obscuredTop`.
+    private var obscuredTop: CGFloat = 0
     weak var extensionActionAnchor: NSView?
     private weak var browserMenuAnchor: NSView?
     private var isRegisteredWithExtensions = false
@@ -44,6 +47,11 @@ final class BrowserWindowController: NSWindowController, NSWindowDelegate, WKWeb
 
         let root = RootView(strip: strip, content: content, omnibox: omnibox, browserMenu: browserMenu, find: find)
         window.contentView = root
+        root.onObscuredTop = { [weak self] top in
+            guard let self, top != obscuredTop else { return }
+            obscuredTop = top
+            tabs.forEach { $0.obscuredTop = top }
+        }
         strip.controller = self
         downloads.onChange = { [weak self] in self?.downloadsDidChange() }
         extensionsDidChange()
@@ -57,6 +65,10 @@ final class BrowserWindowController: NSWindowController, NSWindowDelegate, WKWeb
             if let self, event.window === self.window { active?.edge.userIsScrolling() }
             return event
         }
+
+        // Once a minute is often enough to notice a tab that has been hidden for half an hour.
+        sleepTimer = Timer.scheduledTimer(withTimeInterval: 60, repeats: true) { [weak self] _ in self?.sleepIdleTabs() }
+        sleepTimer?.tolerance = 30
 
         tabs = Pins.urls.map { url in
             let tab = Tab(pinnedAt: url)
@@ -75,9 +87,11 @@ final class BrowserWindowController: NSWindowController, NSWindowDelegate, WKWeb
     func openTab(url: URL? = nil, configuration: WKWebViewConfiguration? = nil, inBackground: Bool = false) -> Tab {
         let tab = Tab(configuration: configuration)
         tab.owner = self
+        tab.obscuredTop = obscuredTop
         tabs.append(tab)
         if isRegisteredWithExtensions { WebExtensions.shared.controller.didOpenTab(tab) }
         if let url { tab.load(url) }
+        tab.hiddenSince = Date()
         if inBackground { updateStrip() } else { select(tab) }
         return tab
     }
@@ -93,6 +107,8 @@ final class BrowserWindowController: NSWindowController, NSWindowDelegate, WKWeb
         find.dismiss()
         let previous = active
         active?.webView.removeFromSuperview()
+        previous?.hiddenSince = Date()
+        tab.hiddenSince = nil
         active = tab
         tab.webView.frame = content.bounds
         tab.webView.autoresizingMask = [.width, .height]
@@ -175,7 +191,7 @@ final class BrowserWindowController: NSWindowController, NSWindowDelegate, WKWeb
     private func applyChrome(of tab: Tab) {
         guard let window else { return }
         let color = tab.chromeColor
-        strip.pageColor = color
+        strip.show(pageColor: color, opacity: tab.chromeOpacity, over: tab.chromeGlide)
 
         let background = tab.isBlank ? nil : tab.webView.underPageBackgroundColor
         if window.backgroundColor != background ?? .textBackgroundColor { window.backgroundColor = background ?? .textBackgroundColor }
@@ -190,6 +206,17 @@ final class BrowserWindowController: NSWindowController, NSWindowDelegate, WKWeb
             strip.appearance = appearance
             window.standardWindowButton(.closeButton)?.superview?.appearance = appearance
         }
+    }
+
+    /// Lets tabs hidden for `minimum` give up their pages; see `Tab.sleepIfIdle`.
+    func sleepIdleTabs(hiddenFor minimum: TimeInterval = Tab.sleepAfter) {
+        tabs.forEach { $0.sleepIfIdle(hiddenFor: minimum) }
+    }
+
+    /// Shows or drops the tabs' icons after the favicons setting changes.
+    func faviconsSettingChanged() {
+        tabs.forEach { $0.faviconsSettingChanged() }
+        updateStrip()
     }
 
     private func updateStrip() {
@@ -415,6 +442,11 @@ final class BrowserWindowController: NSWindowController, NSWindowDelegate, WKWeb
             guard let value, let appearance = BrowserAppearance(rawValue: value) else { return }
             BrowserSettings.appearance = appearance
             tab.webView.reload()
+        case "favicons":
+            guard let value, ["on", "off"].contains(value) else { return }
+            BrowserSettings.showsFavicons = value == "on"
+            (NSApp.delegate as? AppDelegate)?.faviconsSettingChanged()
+            tab.webView.reload()
         case "search-engine":
             guard let value, let engine = SearchEngine(rawValue: value) else { return }
             BrowserSettings.searchEngine = engine
@@ -426,10 +458,11 @@ final class BrowserWindowController: NSWindowController, NSWindowDelegate, WKWeb
         case "clear-history":
             confirmSettingsChange(
                 title: "Clear browsing history?",
-                message: "\(appName) will remove saved addresses and page titles from suggestions.",
+                message: "\(appName) will remove saved addresses, page titles and site icons from suggestions.",
                 button: "Clear History"
             ) {
                 History.shared.clear()
+                Favicons.shared.clear()
                 tab.webView.reload()
             }
         case "clear-website-data":
@@ -656,6 +689,8 @@ final class BrowserWindowController: NSWindowController, NSWindowDelegate, WKWeb
         }
         scrollMonitor.map(NSEvent.removeMonitor)
         scrollMonitor = nil
+        sleepTimer?.invalidate()
+        sleepTimer = nil
         tabs.forEach { $0.webView.removeFromSuperview() }
         tabs = []
         active = nil
@@ -707,8 +742,11 @@ enum Pins {
     }
 }
 
-/// The window's content view: the strip fills the system titlebar area, content and address field fill the rest.
+/// The window's content view: the strip fills the system titlebar area and the address field fills the
+/// rest. So does the content before macOS 26; from 26 on it fills the window and runs under the strip,
+/// with `onObscuredTop` telling the web views how much of them the strip covers.
 private final class RootView: NSView {
+    var onObscuredTop: ((CGFloat) -> Void)?
     private let strip: TabStripView, content: NSView, omnibox: NSView
     private let browserMenu: BrowserMenuView, find: FindView
     /// Kept from the last windowed layout, because in full screen the titlebar leaves the window.
@@ -765,8 +803,14 @@ private final class RootView: NSView {
             strip.leadingInset = window.styleMask.contains(.fullScreen) ? 12 : lightsEnd + 18
         }
         strip.frame = NSRect(x: 0, y: 0, width: bounds.width, height: stripHeight)
-        content.frame = NSRect(x: 0, y: stripHeight, width: bounds.width, height: bounds.height - stripHeight)
-        omnibox.frame = content.frame
+        let below = NSRect(x: 0, y: stripHeight, width: bounds.width, height: bounds.height - stripHeight)
+        if #available(macOS 26.0, *) {
+            content.frame = bounds
+            onObscuredTop?(stripHeight)
+        } else {
+            content.frame = below
+        }
+        omnibox.frame = below
         browserMenu.frame = bounds
         find.frame = bounds
         if let window, let close = window.standardWindowButton(.closeButton), !window.styleMask.contains(.fullScreen) {

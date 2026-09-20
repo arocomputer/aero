@@ -4,10 +4,15 @@ import WebKit
 
 /// One browser tab. Owns its web view, records visits to history, and tells its window controller
 /// whenever title, URL or loading state change. A tab is "blank" until its first navigation.
-/// Its `chromeColor` follows what the page shows along its top edge.
-/// A pinned tab shows as a monogram in the strip, can't be closed, and comes back on the next launch.
+/// Its `chromeColor` follows what the page shows along its top edge: WebKit's own reading of a pinned
+/// header where the system offers one, and the `PageEdge` probe for everything else.
+/// A pinned tab shows as its site's icon or a monogram in the strip, can't be closed, and comes back
+/// on the next launch.
+/// A tab nobody has looked at for `sleepAfter` goes to sleep: it gives up its page, and with it the
+/// content process holding the page's memory, and brings the page back when it is next selected.
 final class Tab: NSObject, WKNavigationDelegate, WKUIDelegate, WKWebExtensionTab {
-    let webView: WKWebView
+    /// Replaced by a fresh, idle one while the tab sleeps; see `sleepIfIdle`.
+    private(set) var webView: WKWebView
     weak var owner: BrowserWindowController?
     private(set) var isBlank: Bool
     /// Text left unfinished in this tab's address field. The window reuses one field across tabs.
@@ -23,15 +28,61 @@ final class Tab: NSObject, WKNavigationDelegate, WKUIDelegate, WKWebExtensionTab
     /// A restored pinned tab waits here until it is first selected, so launch stays cheap.
     private var pendingURL: URL?
 
+    /// How long a tab stays hidden before it may sleep.
+    static let sleepAfter: TimeInterval = 30 * 60
+    /// When the tab was last hidden; nil while it shows. Kept by the window.
+    var hiddenSince: Date?
+    /// What a sleeping tab keeps of its page: enough for the strip, and the state that brings it back.
+    private var asleep: (title: String, url: URL, state: Any?)?
+    /// A page opened by another page's script stays awake: its opener may be waiting to hear from it.
+    private let isScriptOpened: Bool
+    var isAsleep: Bool { asleep != nil }
+    /// The page's address, also while it sleeps.
+    var url: URL? { asleep?.url ?? webView.url }
+
+    /// The site's icon for the strip: the one remembered for the host once a page commits, then the
+    /// one the page declares once it has loaded. Nil when unknown or while favicons are turned off.
+    private(set) var favicon: NSImage?
+    private var faviconHost: String?
+
     /// Set while a reload is being hidden; see `reload`.
     private var reloadHold: ReloadHold?
 
+    /// How much of the web view's top the strip covers. On macOS 26 the page runs under the strip with
+    /// this as its obscured inset, which is what makes WebKit sample the color of whatever is pinned
+    /// there; see `sampledHeaderColor`. Page and snapshot coordinates still start below the inset.
+    var obscuredTop: CGFloat = 0 { didSet { if obscuredTop != oldValue { applyObscuredTop() } } }
+
+    /// WebKit's name for the color of the fixed or sticky content along the top of the page, which it
+    /// samples in the render process while the page is laid out under an obscured inset. It is what
+    /// Safari tints its toolbar with, and it sees what a script cannot: gradients, pseudo-elements and
+    /// layers hidden from hit-testing. It is private, so it is looked up at run time and everything
+    /// works without it: before macOS 26 it does not exist, and the probe decides alone.
+    private static let sampledKey = "_sampledTopFixedPositionContentColor"
+    private var isObservingSampled = false
+
+    /// Nil when WebKit has no opinion: nothing is pinned, or the header is translucent or blurred,
+    /// which the probe composites instead.
+    private var sampledHeaderColor: NSColor? {
+        guard isObservingSampled, let color = webView.value(forKey: Self.sampledKey) as? NSColor,
+            color.alphaComponent > 0.99
+        else { return nil }
+        return color
+    }
+
+    /// The host of the page last committed, to tell moving within a site from leaving it.
+    private var committedHost: String?
+
     /// Follows what the page shows along its top edge, for `chromeColor`.
     private(set) lazy var edge = PageEdge(
-        isLoading: { [weak webView] in webView?.isLoading ?? false },
-        isShown: { [weak webView] in webView?.window != nil && (webView?.bounds.width ?? 0) > 0 },
-        snapshot: { [weak webView] done in
-            guard let webView else { return done(nil) }
+        isLoading: { [weak self] in self?.webView.isLoading ?? false },
+        // No snapshot is worth a frozen page while WebKit already names the color.
+        isShown: { [weak self] in
+            guard let self, sampledHeaderColor == nil else { return false }
+            return webView.window != nil && webView.bounds.width > 0
+        },
+        snapshot: { [weak self] done in
+            guard let webView = self?.webView else { return done(nil) }
             let configuration = WKSnapshotConfiguration()
             configuration.rect = CGRect(x: 0, y: 0, width: webView.bounds.width, height: 2)
             configuration.afterScreenUpdates = false
@@ -46,19 +97,58 @@ final class Tab: NSObject, WKNavigationDelegate, WKUIDelegate, WKWebExtensionTab
     init(configuration: WKWebViewConfiguration? = nil) {
         isBlank = configuration == nil
         isOmniboxOpen = configuration == nil
-        webView = WKWebView(frame: .zero, configuration: configuration ?? Tab.configuration())
+        isScriptOpened = configuration != nil
+        webView = Tab.makeWebView(configuration ?? Tab.configuration())
+        super.init()
+        attach()
+    }
+
+    private static func makeWebView(_ configuration: WKWebViewConfiguration) -> WKWebView {
+        let webView = WKWebView(frame: .zero, configuration: configuration)
         webView.allowsBackForwardNavigationGestures = true
         webView.allowsMagnification = true
         #if DEBUG
             webView.isInspectable = true
         #endif
-        super.init()
+        return webView
+    }
+
+    deinit { detach() }
+
+    /// Stops observing the current web view, before it is let go.
+    private func detach() {
+        observations = []
+        if isObservingSampled { webView.removeObserver(self, forKeyPath: Self.sampledKey) }
+        isObservingSampled = false
+    }
+
+    override func observeValue(
+        forKeyPath keyPath: String?, of object: Any?, change: [NSKeyValueChangeKey: Any]?, context: UnsafeMutableRawPointer?
+    ) {
+        guard keyPath == Self.sampledKey else { return }
+        // The probe may have been holding back a snapshot that is wanted now.
+        if sampledHeaderColor == nil { edge.resume() }
+        owner?.tabChromeDidChange(self)
+    }
+
+    private func applyObscuredTop() {
+        if #available(macOS 26.0, *) {
+            webView.obscuredContentInsets = NSEdgeInsets(top: obscuredTop, left: 0, bottom: 0, right: 0)
+        }
+    }
+
+    /// Makes this tab the delegate and observer of its current web view.
+    private func attach() {
         webView.navigationDelegate = self
         webView.uiDelegate = self
-
+        applyObscuredTop()
+        if webView.responds(to: NSSelectorFromString(Self.sampledKey)) {
+            webView.addObserver(self, forKeyPath: Self.sampledKey, options: [], context: nil)
+            isObservingSampled = true
+        }
         observations = [
             webView.observe(\.title) { [weak self] _, _ in self?.titleChanged() },
-            webView.observe(\.url) { [weak self] _, _ in self?.changed([.URL]) },
+            webView.observe(\.url) { [weak self] _, _ in self?.urlChanged() },
             webView.observe(\.isLoading) { [weak self] _, _ in self?.changed([.loading]) },
             webView.observe(\.estimatedProgress) { [weak self] _, _ in self?.changed() },
             webView.observe(\.underPageBackgroundColor) { [weak self] _, _ in self?.changed() },
@@ -74,24 +164,110 @@ final class Tab: NSObject, WKNavigationDelegate, WKUIDelegate, WKWebExtensionTab
         isOmniboxOpen = false
         pinnedURL = url
         pendingURL = url
+        showRememberedFavicon(for: url)
     }
 
     var title: String {
+        if let asleep { return asleep.title }
         if let title = webView.title, !title.isEmpty { return title }
         if let url = webView.url ?? pinnedURL, url.scheme != "about" { return AddressInput.display(for: url) }
         return "New Tab"
     }
 
-    /// The letter a pinned tab shows: the first of its site's name.
+    /// The letter a pinned tab shows when it has no icon: the first of its site's name.
     var monogram: String {
-        let host = (webView.url ?? pinnedURL)?.host ?? ""
+        let host = (url ?? pinnedURL)?.host ?? ""
         return AddressInput.stripped(host).prefix(1).uppercased()
     }
 
+    /// Brings the icon in line with the favicons setting after it changes.
+    func faviconsSettingChanged() {
+        (favicon, faviconHost) = (nil, nil)
+        showRememberedFavicon(for: url ?? pinnedURL)
+        if !webView.isLoading { loadFavicon() }
+    }
+
+    /// Shows the icon remembered for the address's host. Pages on one host can have icons of their
+    /// own, so moving within a host keeps the current icon until the new page declares its own.
+    private func showRememberedFavicon(for url: URL?) {
+        let isWeb = ["http", "https"].contains(url?.scheme?.lowercased() ?? "")
+        let host = BrowserSettings.showsFavicons && isWeb ? url?.host?.lowercased() : nil
+        guard host != faviconHost else { return }
+        faviconHost = host
+        favicon = host == nil ? nil : Favicons.shared.icon(for: url)
+    }
+
+    /// Asks the loaded page which icons it declares and shows the best one once it is fetched.
+    private func loadFavicon() {
+        guard BrowserSettings.showsFavicons, let page = webView.url, ["http", "https"].contains(page.scheme?.lowercased() ?? "")
+        else { return }
+        webView.callAsyncJavaScript(Favicons.declaredScript, arguments: [:], in: nil, in: .defaultClient) { [weak self] result in
+            let declared = Favicons.declared(from: try? result.get())
+            Task { @MainActor in
+                guard let image = await Favicons.shared.load(declared: declared, page: page),
+                    let self, BrowserSettings.showsFavicons, self.webView.url?.host == page.host, self.favicon !== image
+                else { return }
+                self.favicon = image
+                self.changed()
+            }
+        }
+    }
+
+    /// Starts what a tab put off until it is looked at: a restored pin's first load, or waking up.
     func loadIfPending() {
         if let url = pendingURL {
             pendingURL = nil
             load(url)
+        } else if let asleep {
+            self.asleep = nil
+            if asleep.state != nil { webView.interactionState = asleep.state } else { webView.load(URLRequest(url: asleep.url)) }
+        }
+    }
+
+    /// Whether any text field holds something the user typed, or an editor has the focus.
+    private static let hasEdits = """
+        return [...document.querySelectorAll('input, textarea')].some(field =>
+                field.type !== 'hidden' && typeof field.defaultValue === 'string' && field.value !== field.defaultValue)
+            || document.activeElement?.isContentEditable === true
+        """
+
+    /// What rules sleeping out without asking the page: a tab that shows, was hidden only recently, is
+    /// pinned, blank, waiting, loading, signing in, opened by a script, in full screen, capturing the
+    /// camera or microphone, outside the shared session, or not a web page.
+    private func maySleep(hiddenFor minimum: TimeInterval) -> Bool {
+        guard asleep == nil, !isPinned, !isScriptOpened, !isBlank, pendingURL == nil, reloadHold == nil, authenticationRequest == nil,
+            webView.superview == nil, let hiddenSince, Date().timeIntervalSince(hiddenSince) >= minimum,
+            !webView.isLoading, webView.fullscreenState == .notInFullscreen,
+            webView.cameraCaptureState == .none, webView.microphoneCaptureState == .none,
+            webView.configuration.websiteDataStore.isPersistent,
+            ["http", "https"].contains(webView.url?.scheme?.lowercased() ?? "")
+        else { return false }
+        return true
+    }
+
+    /// Puts the tab to sleep if it has been hidden for `minimum` and nothing would be lost: see
+    /// `maySleep`, and it must not be playing anything nor hold typed text. The page's address, history
+    /// and scroll position come back on waking; what a page keeps only in memory does not. The old web
+    /// view is let go, which ends its content process, and an idle one, which has no process, takes
+    /// its place.
+    func sleepIfIdle(hiddenFor minimum: TimeInterval = Tab.sleepAfter) {
+        guard maySleep(hiddenFor: minimum) else { return }
+        let asked = webView
+        asked.requestMediaPlaybackState { [weak self] playback in
+            guard playback != .playing else { return }
+            asked.callAsyncJavaScript(Self.hasEdits, arguments: [:], in: nil, in: .defaultClient) { result in
+                guard let self, asked === self.webView, (try? result.get()) as? Bool == false,
+                    self.maySleep(hiddenFor: minimum), let url = asked.url
+                else { return }
+                self.asleep = (self.title, url, asked.interactionState)
+                self.detach()
+                asked.navigationDelegate = nil
+                asked.uiDelegate = nil
+                self.webView = Tab.makeWebView(Tab.configuration())
+                self.webView.pageZoom = asked.pageZoom
+                self.attach()
+                self.changed()
+            }
         }
     }
 
@@ -102,7 +278,20 @@ final class Tab: NSObject, WKNavigationDelegate, WKUIDelegate, WKWebExtensionTab
     /// Nil while the tab is blank.
     var chromeColor: NSColor? {
         if let reloadHold { return reloadHold.chromeColor }
-        return isBlank ? nil : edge.color ?? webView.underPageBackgroundColor?.withAlphaComponent(1)
+        if isBlank { return nil }
+        // Styles are exact and arrive the moment a header starts to change, so they come first.
+        // WebKit's reading covers what only pixels can tell, then a snapshot, then the background.
+        let read = edge.isFromStyles ? edge.color : nil
+        return read ?? sampledHeaderColor ?? edge.color ?? webView.underPageBackgroundColor?.withAlphaComponent(1)
+    }
+
+    /// How long the page takes to reach `chromeColor`, so the strip can take as long; 0 for at once.
+    var chromeGlide: TimeInterval { reloadHold == nil && edge.isFromStyles ? edge.glide : 0 }
+
+    /// How opaque the strip draws `chromeColor`: below 1 when the page's header blurs what is behind it
+    /// and the page runs under the strip, so there is something beneath the strip to blur.
+    var chromeOpacity: CGFloat {
+        reloadHold == nil && !isBlank && obscuredTop > 0 ? edge.opacity ?? 1 : 1
     }
 
     /// Reloads the page so that nothing appears to move, and the strip keeps its color meanwhile; see
@@ -114,7 +303,7 @@ final class Tab: NSObject, WKNavigationDelegate, WKUIDelegate, WKWebExtensionTab
             reloadHold = nil
             owner?.tabChromeDidChange(self)
         }
-        ReloadHold.begin(in: webView, chromeColor: chromeColor, onEnd: release) { [weak self] hold in
+        ReloadHold.begin(in: webView, below: obscuredTop, chromeColor: chromeColor, onEnd: release) { [weak self] hold in
             self?.reloadHold = hold
             self?.webView.reload()
         }
@@ -177,14 +366,21 @@ final class Tab: NSObject, WKNavigationDelegate, WKUIDelegate, WKWebExtensionTab
         let system = ProcessInfo.processInfo.operatingSystemVersion.majorVersion
         configuration.applicationNameForUserAgent = "Version/\(system >= 26 ? system : system + 3).0 Safari/605.1.15"
         configuration.preferences.isElementFullscreenEnabled = true
-        configuration.userContentController.addUserScript(
-            WKUserScript(source: EdgeChangeRouter.script, injectionTime: .atDocumentStart, forMainFrameOnly: true))
-        configuration.userContentController.add(EdgeChangeRouter.shared, name: EdgeChangeRouter.name)
+        EdgeChangeRouter.install(in: configuration.userContentController)
         return configuration
     }
 
     private func changed(_ extensionProperties: WKWebExtension.TabChangedProperties = []) {
         owner?.tabDidChange(self, extensionProperties: extensionProperties)
+    }
+
+    /// A new address without a new page is a client-side route change: the page under the strip may
+    /// be a different one, so the probe is asked to look now rather than when it next notices.
+    private func urlChanged() {
+        if !webView.isLoading {
+            webView.evaluateJavaScript("globalThis.aeroEdgeProbe?.()", in: nil, in: .defaultClient) { _ in }
+        }
+        changed([.URL])
     }
 
     private func titleChanged() {
@@ -294,9 +490,16 @@ final class Tab: NSObject, WKNavigationDelegate, WKUIDelegate, WKWebExtensionTab
 
     func webView(_ webView: WKWebView, didCommit navigation: WKNavigation!) {
         if let url = webView.url { History.shared.visit(url) }
-        edge.reset()
+        showRememberedFavicon(for: webView.url)
+        let host = webView.url?.host
+        edge.reset(keepingColor: host != nil && host == committedHost)
+        committedHost = host
         reveal()
         reloadHold?.pageCommitted()
+    }
+
+    func webView(_ webView: WKWebView, didFinish navigation: WKNavigation!) {
+        loadFavicon()
     }
 
     func webView(_ webView: WKWebView, didFailProvisionalNavigation navigation: WKNavigation!, withError error: Error) {

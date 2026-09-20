@@ -63,6 +63,7 @@ enum BrowserSettings {
     private static let searchEngineKey = "SearchEngine"
     private static let downloadDirectoryKey = "DownloadDirectory"
     private static let appearanceKey = "Appearance"
+    private static let faviconsKey = "ShowFavicons"
 
     static var appearance: BrowserAppearance {
         get { BrowserAppearance(rawValue: UserDefaults.standard.string(forKey: appearanceKey) ?? "") ?? .system }
@@ -79,6 +80,13 @@ enum BrowserSettings {
         case .light: NSApp.appearance = NSAppearance(named: .aqua)
         case .dark: NSApp.appearance = NSAppearance(named: .darkAqua)
         }
+    }
+
+    /// Whether tabs and address suggestions show site icons. On until the user turns it off; while
+    /// off, no icon is fetched either.
+    static var showsFavicons: Bool {
+        get { UserDefaults.standard.object(forKey: faviconsKey) as? Bool ?? true }
+        set { UserDefaults.standard.set(newValue, forKey: faviconsKey) }
     }
 
     static var searchEngine: SearchEngine {

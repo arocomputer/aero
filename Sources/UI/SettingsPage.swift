@@ -36,6 +36,7 @@ enum SettingsPage {
             .replacingOccurrences(of: "{{iconAbout}}", with: symbol("info.circle"))
             .replacingOccurrences(of: "{{searchEngines}}", with: choices)
             .replacingOccurrences(of: "{{appearances}}", with: appearances)
+            .replacingOccurrences(of: "{{faviconsChecked}}", with: BrowserSettings.showsFavicons ? " checked" : "")
             .replacingOccurrences(of: "{{downloadFolder}}", with: escape(folder))
             .replacingOccurrences(of: "{{passkeyStatus}}", with: escape(Passkeys.status))
             .replacingOccurrences(

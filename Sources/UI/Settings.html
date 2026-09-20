@@ -51,6 +51,7 @@
     .title { font-size: 13px; font-weight: 610; }
     .detail { margin-top: 3px; color: var(--muted); font-size: 12px; line-height: 1.4; }
     .control { flex: none; display: flex; align-items: center; gap: 8px; }
+    input[switch] { margin: 0; accent-color: var(--accent); cursor: pointer; }
     select, .button { appearance: none; border: 1px solid transparent; border-radius: 8px; background: var(--control); color: var(--text); padding: 7px 11px; font-size: 13px; font-weight: 590; text-decoration: none; cursor: pointer; }
     select { min-width: 138px; padding-right: 31px; background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='12' height='8'%3E%3Cpath d='m1 1 5 5 5-5' fill='none' stroke='%23777' stroke-width='1.5'/%3E%3C/svg%3E"); background-repeat: no-repeat; background-position: right 10px center; }
     select:hover, .button:hover { background-color: var(--surface-hover); border-color: var(--line); }
@@ -103,11 +104,12 @@
         <label class="search"><img src="{{iconSearch}}" alt=""><input id="settings-search" type="search" placeholder="Search settings" autocomplete="off"></label>
       </div>
       <main>
-        <section class="panel" id="general" data-title="General appearance theme default browser">
+        <section class="panel" id="general" data-title="General appearance theme site icons favicons default browser">
           <div class="heading"><h1>General</h1><p>Choose how {{appName}} looks and which links open in it.</p></div>
           <div class="group">
             <h2>Appearance</h2>
-            <div class="card"><div class="row" data-search="appearance theme system light dark"><div class="copy"><div class="title">Appearance</div><div class="detail">Use the macOS appearance or keep {{appName}} light or dark.</div></div><div class="control"><select aria-label="Appearance" onchange="location.href='aero://settings/action/appearance?value='+encodeURIComponent(this.value)">{{appearances}}</select></div></div></div>
+            <div class="card"><div class="row" data-search="appearance theme system light dark"><div class="copy"><div class="title">Appearance</div><div class="detail">Use the macOS appearance or keep {{appName}} light or dark.</div></div><div class="control"><select aria-label="Appearance" onchange="location.href='aero://settings/action/appearance?value='+encodeURIComponent(this.value)">{{appearances}}</select></div></div>
+            <div class="row" data-search="site icons favicons tabs address field suggestions"><div class="copy"><div class="title">Site icons</div><div class="detail">Show each site's icon in tabs and address-field suggestions.</div></div><div class="control"><input type="checkbox" switch aria-label="Site icons"{{faviconsChecked}} onchange="location.href='aero://settings/action/favicons?value='+(this.checked?'on':'off')"></div></div></div>
           </div>
           <div class="group">
             <h2>Default browser</h2>
@@ -123,7 +125,7 @@
         <section class="panel" id="privacy" data-title="Privacy and security history website data cookies cache sign-ins">
           <div class="heading"><h1>Privacy and security</h1><p>Remove locally stored browsing records and website data.</p></div>
           <div class="group"><h2>Credentials</h2><div class="card"><div class="row" data-search="passkeys security keys credentials icloud keychain 1password"><div class="copy"><div class="title">Passkeys and security keys</div><div class="detail">{{passkeyStatus}}</div></div><div class="control">{{passkeyAction}}</div></div></div></div>
-          <div class="group"><h2>History</h2><div class="card"><div class="row" data-search="history addresses page titles suggestions clear"><div class="copy"><div class="title">Browsing history</div><div class="detail">Remove addresses and page titles from address-field suggestions.</div></div><div class="control"><a class="button danger" href="aero://settings/action/clear-history">Clear History…</a></div></div></div></div>
+          <div class="group"><h2>History</h2><div class="card"><div class="row" data-search="history addresses page titles suggestions clear"><div class="copy"><div class="title">Browsing history</div><div class="detail">Remove addresses, page titles and site icons from address-field suggestions.</div></div><div class="control"><a class="button danger" href="aero://settings/action/clear-history">Clear History…</a></div></div></div></div>
           <div class="group"><h2>Website data</h2><div class="card"><div class="row" data-search="website data cookies cache local storage sign-ins clear"><div class="copy"><div class="title">Cookies and website data</div><div class="detail">Remove cookies, caches, local storage, and website sign-ins.</div></div><div class="control"><a class="button danger" href="aero://settings/action/clear-website-data">Clear Website Data…</a></div></div></div></div>
         </section>
 

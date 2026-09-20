@@ -1,11 +1,14 @@
 import AppKit
 
 /// The single strip of chrome, filling the window's titlebar: a hairline after the traffic lights, the
-/// back, forward and reload controls, pinned tabs as monograms, then tab pills, then a "+" that shows while the
-/// pointer is over the strip. Laid out by hand; empty areas drag the window.
+/// back, forward and reload controls, pinned tabs as site icons or monograms, then tab pills, then a "+" that
+/// shows while the pointer is over the strip. Laid out by hand; empty areas drag the window.
 /// Changes to the tabs animate: the active highlight slides between items, new ones slide in, the rest make room.
-/// It has no surface of its own: it shows `pageColor`, the color along the page's top edge, and its
-/// `appearance` is set light or dark to stay legible on it.
+/// It has no surface of its own: it shows the color along the page's top edge, and its `appearance`
+/// is set light or dark to stay legible on it. Where the page's header is a material, a tint over a
+/// blur of what scrolls beneath, the strip is the same: the color is thinned and a blur of the page
+/// running under the strip shows through, so text leaving the header keeps fading through the tabs
+/// instead of being cut off by a lid. See `show(pageColor:opacity:over:)`.
 final class TabStripView: NSView {
     weak var controller: BrowserWindowController?
     /// Space reserved on the left for the traffic lights.
@@ -16,23 +19,20 @@ final class TabStripView: NSView {
     /// The color along the page's top edge, shown behind the strip; nil shows the window through.
     /// Every change glides over a moment, so the strip reads as one surface easing between the page's
     /// colors instead of stepping through samples.
-    var pageColor: NSColor? {
-        didSet {
-            guard pageColor != oldValue else { return }
-            NSAnimationContext.runAnimationGroup { context in
-                context.duration = 0.18
-                context.allowsImplicitAnimation = true
-                layer?.backgroundColor = pageColor?.cgColor
-            }
-        }
-    }
+    private var pageColor: NSColor?
+    private var pageOpacity: CGFloat = 1
+    /// Never thin enough to leave the tabs' titles on raw moving text.
+    private static let leastOpacity: CGFloat = 0.6
+
+    private let blur = Backdrop()
+    private let tint = Surface()
 
     private var pinButtons: [PinButton] = []
     private var pills: [TabPillView] = []
     private var entering: [NSView] = []
     private var activeItem: NSView?
     /// What the last animated arrangement was made for; see `update`.
-    private var arranged: [AnyHashable] = []
+    private var arranged: Arrangement?
     private let highlight = TintView(opacity: 0.08, radius: Metrics.radius)
     private let separator = TintView(opacity: 0.14, radius: 0)
     private let backButton = StripButton(symbol: "chevron.backward", pointSize: 14, weight: .medium)
@@ -55,6 +55,15 @@ final class TabStripView: NSView {
     override init(frame: NSRect) {
         super.init(frame: frame)
         wantsLayer = true
+        blur.blendingMode = .withinWindow
+        blur.material = .headerView
+        blur.state = .active
+        blur.isHidden = true
+        for surface in [blur, tint] as [NSView] {
+            surface.frame = bounds
+            surface.autoresizingMask = [.width, .height]
+            addSubview(surface)
+        }
         addSubview(highlight)
 
         backButton.onClick = { [weak self] in self?.controller?.goBackInHistory(nil) }
@@ -95,11 +104,44 @@ final class TabStripView: NSView {
         return bounds.contains(point) && hitTest(point) === self
     }
 
-    /// Brings monograms and pills in line with the controller's tabs (pinned ones first), animating what moved.
+    /// Shows the color along the page's top edge, `opacity` of it over a blur of the page when that is
+    /// below 1; nil shows the window through. `glide` is how long the page's own header takes to get
+    /// there: the strip fades over the same time with the same easing, so the two change as one. A
+    /// change the page makes at once is shown at once, softened only enough not to flash.
+    func show(pageColor color: NSColor?, opacity: CGFloat, over glide: TimeInterval) {
+        guard color != pageColor || opacity != pageOpacity else { return }
+        (pageColor, pageOpacity) = (color, opacity)
+        let shown = max(opacity, Self.leastOpacity)
+        blur.isHidden = color == nil || shown >= 1
+        NSAnimationContext.runAnimationGroup { context in
+            context.duration = glide > 0 ? min(glide, 1) : 0.05
+            // The default curve is CSS's `ease`, which is what nearly every header fades with.
+            context.timingFunction = CAMediaTimingFunction(name: glide > 0 ? .default : .linear)
+            context.allowsImplicitAnimation = true
+            tint.layer?.backgroundColor = color?.withAlphaComponent(shown).cgColor
+        }
+    }
+
+    /// Brings pinned items and pills in line with the controller's tabs (pinned ones first), animating
+    /// what moved. This runs on every title and progress tick of every tab, so it only compares: each
+    /// view is made once for its tab, its setters do nothing for a value they already show, and frames
+    /// are touched only when the arrangement changed.
     func update(tabs: [Tab], active: Tab?) {
-        let pinned = tabs.filter(\.isPinned), ordinary = tabs.filter { !$0.isPinned }
-        pinButtons = resized(pinButtons, to: pinned.count) { PinButton() }
-        pills = resized(pills, to: ordinary.count) { TabPillView() }
+        var pinned: [Tab] = [], ordinary: [Tab] = []
+        for tab in tabs { if tab.isPinned { pinned.append(tab) } else { ordinary.append(tab) } }
+        pinButtons = matched(pinButtons, to: pinned) { [weak self] tab in
+            let button = PinButton(tab: tab)
+            button.onSelect = { [weak self, weak tab] in tab.map { self?.controller?.select($0) } }
+            button.onUnpin = { [weak self, weak tab] in tab.map { self?.controller?.setPinned(false, tab: $0) } }
+            return button
+        }
+        pills = matched(pills, to: ordinary) { [weak self] tab in
+            let pill = TabPillView(tab: tab)
+            pill.onSelect = { [weak self, weak tab] in tab.map { self?.controller?.select($0) } }
+            pill.onClose = { [weak self, weak tab] in tab.map { self?.controller?.close($0) } }
+            pill.onPin = { [weak self, weak tab] in tab.map { self?.controller?.setPinned(true, tab: $0) } }
+            return pill
+        }
         activeItem = nil
         backButton.isEnabled = active?.webView.canGoBack ?? false
         forwardButton.isEnabled = active?.webView.canGoForward ?? false
@@ -107,46 +149,44 @@ final class TabStripView: NSView {
 
         for (button, tab) in zip(pinButtons, pinned) {
             button.letter = tab.monogram
-            button.toolTip = tab.title
+            button.icon = tab.favicon
+            button.title = tab.title
             button.isActive = tab === active
-            button.onSelect = { [weak controller, weak tab] in tab.map { controller?.select($0) } }
-            button.onUnpin = { [weak controller, weak tab] in tab.map { controller?.setPinned(false, tab: $0) } }
             if tab === active { activeItem = button }
         }
         for (pill, tab) in zip(pills, ordinary) {
             pill.title = tab.title
+            pill.icon = tab.favicon
             pill.isActive = tab === active
             pill.progress = tab.webView.estimatedProgress
             pill.isLoading = tab.webView.isLoading
             pill.canPin = !tab.isBlank
-            pill.onSelect = { [weak controller, weak tab] in tab.map { controller?.select($0) } }
-            pill.onClose = { [weak controller, weak tab] in tab.map { controller?.close($0) } }
-            pill.onPin = { [weak controller, weak tab] in tab.map { controller?.setPinned(true, tab: $0) } }
             if tab === active { activeItem = pill }
         }
-        // This runs on every title and progress tick of every tab. Only the number of items, which one
-        // is active and the space available move anything, so the rest of the time frames are left alone.
-        let arrangement: [AnyHashable] = [
-            pinButtons.count, pills.count, activeItem.map(ObjectIdentifier.init), leadingInset, trailingInset, bounds.width,
-            showsDownloads,
-        ]
+        let arrangement = Arrangement(
+            pins: pinButtons.count, pills: pills.count, active: activeItem.map(ObjectIdentifier.init),
+            leading: leadingInset, trailing: trailingInset, width: bounds.width, showsDownloads: showsDownloads)
         if arrangement != arranged || !entering.isEmpty {
             arranged = arrangement
             arrange(animated: bounds.width > 0)
         }
     }
 
-    /// Grows or shrinks a list of item views to `count`, adding and removing them from the strip.
-    private func resized<Item: NSView>(_ items: [Item], to count: Int, make: () -> Item) -> [Item] {
-        var items = items
-        while items.count > count { items.removeLast().removeFromSuperview() }
-        while items.count < count {
-            let item = make()
-            items.append(item)
+    /// Brings a list of item views in line with `tabs`. A view stays with its tab for life, so a closed
+    /// tab takes its own view with it and the others slide over, instead of the last view going and
+    /// every title shifting down one.
+    private func matched<Item: TabItem>(_ items: [Item], to tabs: [Tab], make: (Tab) -> Item) -> [Item] {
+        if items.count == tabs.count, zip(items, tabs).allSatisfy({ $0.tab === $1 }) { return items }
+        var left = items
+        let matched = tabs.map { tab -> Item in
+            if let index = left.firstIndex(where: { $0.tab === tab }) { return left.remove(at: index) }
+            let item = make(tab)
             entering.append(item)
             addSubview(item)
+            return item
         }
-        return items
+        left.forEach { $0.removeFromSuperview() }
+        return matched
     }
 
     override func layout() {
@@ -224,6 +264,35 @@ final class TabStripView: NSView {
     override func mouseExited(with event: NSEvent) { plusButton.animator().alphaValue = 0 }
 }
 
+/// The strip's color. It and the blur behind it are passed over by the pointer, so clicks on empty
+/// strip still reach the strip, which drags and zooms the window.
+private final class Surface: NSView {
+    override init(frame: NSRect) {
+        super.init(frame: frame)
+        wantsLayer = true
+    }
+
+    required init?(coder: NSCoder) { fatalError("not used") }
+    override func hitTest(_ point: NSPoint) -> NSView? { nil }
+}
+
+private final class Backdrop: NSVisualEffectView {
+    override func hitTest(_ point: NSPoint) -> NSView? { nil }
+}
+
+/// Everything that moves the strip's items: how many there are, which is active and the space they get.
+private struct Arrangement: Equatable {
+    let pins: Int, pills: Int
+    let active: ObjectIdentifier?
+    let leading: CGFloat, trailing: CGFloat, width: CGFloat
+    let showsDownloads: Bool
+}
+
+/// A strip item that shows one tab for as long as it lives.
+private protocol TabItem: NSView {
+    var tab: Tab? { get }
+}
+
 /// A flat tint of the strip's text color that follows the strip's light or dark appearance: the active
 /// tab's background, which slides between items, and the hairline after the traffic lights.
 private final class TintView: NSView {
@@ -260,12 +329,28 @@ private enum Metrics {
     static let monogramFont = NSFont.systemFont(ofSize: 13, weight: .medium)
 }
 
-/// One ordinary tab in the strip. The strip draws the active tab's background; the pill itself shows a
-/// hover tint, a close "×" on hover, and loading as a darker fill that sweeps left to right with
-/// `progress`. The title always leaves room for the close button, so it never reflows.
-final class TabPillView: NSView {
-    var title = "" { didSet { label.stringValue = title; toolTip = title } }
-    var isActive = false { didSet { needsDisplay = true } }
+/// One ordinary tab in the strip. The strip draws the active tab's background; the pill itself shows the
+/// site's icon when it has one, a hover tint, a close "×" on hover, and loading as a darker fill that
+/// sweeps left to right with `progress`. The title always leaves room for the close button, so hovering
+/// never reflows it.
+final class TabPillView: NSView, TabItem {
+    private(set) weak var tab: Tab?
+    var title = "" {
+        didSet {
+            guard title != oldValue else { return }
+            label.stringValue = title
+            toolTip = title
+        }
+    }
+    /// The site's icon, shown before the title; without one the title starts at the pill's edge.
+    var icon: NSImage? {
+        didSet {
+            guard icon !== oldValue else { return }
+            iconView.image = icon
+            needsLayout = true
+        }
+    }
+    var isActive = false { didSet { if isActive != oldValue { needsDisplay = true } } }
     var isLoading = false { didSet { if isLoading != oldValue { fill.animator().alphaValue = isLoading ? 1 : 0 } } }
     var progress: Double = 0 { didSet { if progress != oldValue { updateFill(animated: progress > oldValue) } } }
     /// Whether the context menu offers pinning; a blank tab has nothing to pin.
@@ -275,6 +360,7 @@ final class TabPillView: NSView {
     var onPin: (() -> Void)?
 
     private let fill = NSView()
+    private let iconView = NSImageView()
     private let label = NSTextField(labelWithString: "")
     private let closeButton = StripButton(symbol: "xmark", pointSize: 11)
     private var isHovered = false {
@@ -284,7 +370,8 @@ final class TabPillView: NSView {
         }
     }
 
-    init() {
+    init(tab: Tab) {
+        self.tab = tab
         super.init(frame: .zero)
         wantsLayer = true
         layer?.cornerRadius = Metrics.radius
@@ -293,10 +380,11 @@ final class TabPillView: NSView {
 
         fill.wantsLayer = true
         fill.alphaValue = 0
+        iconView.contentTintColor = .textColor
         label.font = Metrics.titleFont
         label.lineBreakMode = .byTruncatingTail
         closeButton.alphaValue = 0
-        [fill, label, closeButton].forEach(addSubview)
+        [fill, iconView, label, closeButton].forEach(addSubview)
 
         addTrackingArea(
             NSTrackingArea(
@@ -321,11 +409,16 @@ final class TabPillView: NSView {
         layer?.backgroundColor = NSColor.textColor.withAlphaComponent(isHovered && !isActive ? 0.04 : 0).cgColor
         fill.layer?.backgroundColor = NSColor.textColor.withAlphaComponent(0.07).cgColor
         label.textColor = isActive ? .textColor : NSColor.textColor.withAlphaComponent(0.57)
+        // In a pill too narrow for both, the icon gives way to the close button.
+        let isCovered = isHovered && closeButton.frame.minX < iconView.frame.maxX + 2
+        iconView.alphaValue = isCovered ? 0 : isActive ? 1 : 0.6
     }
 
     override func layout() {
         super.layout()
-        label.frame = NSRect(x: 12, y: 7, width: max(0, bounds.width - 40), height: 16)
+        let titleX: CGFloat = icon == nil ? 12 : 33
+        iconView.frame = NSRect(x: 10, y: 7, width: 16, height: 16)
+        label.frame = NSRect(x: titleX, y: 7, width: max(0, bounds.width - titleX - 28), height: 16)
         closeButton.frame = NSRect(x: bounds.width - 25, y: 7, width: 16, height: 16)
         updateFill(animated: false)
     }
@@ -355,22 +448,36 @@ final class TabPillView: NSView {
     }
 }
 
-/// A pinned tab, shown as the first letter of its site. Click selects it; the context menu unpins it.
-final class PinButton: NSView {
-    var letter = "" { didSet { label.stringValue = letter } }
-    var isActive = false { didSet { needsDisplay = true } }
+/// A pinned tab, shown as its site's icon, or the first letter of its site when it has none. Click
+/// selects it; the context menu unpins it.
+final class PinButton: NSView, TabItem {
+    private(set) weak var tab: Tab?
+    var letter = "" { didSet { if letter != oldValue { label.stringValue = letter } } }
+    /// The page's title, shown as the tooltip.
+    var title = "" { didSet { if title != oldValue { toolTip = title } } }
+    var icon: NSImage? {
+        didSet {
+            guard icon !== oldValue else { return }
+            iconView.image = icon
+            label.isHidden = icon != nil
+        }
+    }
+    var isActive = false { didSet { if isActive != oldValue { needsDisplay = true } } }
     var onSelect: (() -> Void)?
     var onUnpin: (() -> Void)?
     private let label = NSTextField(labelWithString: "")
+    private let iconView = NSImageView()
 
-    init() {
+    init(tab: Tab) {
+        self.tab = tab
         super.init(frame: .zero)
         wantsLayer = true
         layer?.cornerRadius = Metrics.radius
         layer?.cornerCurve = .continuous
         label.font = Metrics.monogramFont
         label.alignment = .center
-        addSubview(label)
+        iconView.contentTintColor = .textColor
+        [label, iconView].forEach(addSubview)
 
         let menu = NSMenu()
         menu.addItem(withTitle: "Unpin Tab", action: #selector(unpinClicked), keyEquivalent: "").target = self
@@ -388,11 +495,13 @@ final class PinButton: NSView {
     override func updateLayer() {
         layer?.backgroundColor = NSColor.textColor.withAlphaComponent(0.05).cgColor
         label.textColor = NSColor.textColor.withAlphaComponent(isActive ? 0.9 : 0.29)
+        iconView.alphaValue = isActive ? 1 : 0.5
     }
 
     override func layout() {
         super.layout()
         label.frame = NSRect(x: 0, y: 7, width: bounds.width, height: 16)
+        iconView.frame = NSRect(x: (bounds.width - 16) / 2, y: 7, width: 16, height: 16)
     }
 
     override func mouseDown(with event: NSEvent) { onSelect?() }

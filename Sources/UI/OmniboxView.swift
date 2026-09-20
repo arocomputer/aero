@@ -17,8 +17,8 @@ final class OmniboxView: NSView, NSTextFieldDelegate {
     private let searchHint = SearchHint()
     private let listBox = CardView()
     /// Clips rows to the list's rounded shape while its height animates; the card itself can't clip
-    /// without losing its shadow.
-    private let rowsClip = NSView()
+    /// without losing its shadow. Flipped, so the first row is the top one and ↓ moves down the list.
+    private let rowsClip = RowsClip()
     private var rows: [SuggestionRow] = []
     /// Vertical offset of field and list from their resting place, used to rise in and lift away.
     private var lift: CGFloat = 0
@@ -225,19 +225,24 @@ final class OmniboxView: NSView, NSTextFieldDelegate {
     /// so rows only show distinct destinations. Surviving rows hold still or slide to their new place;
     /// new ones fade in and dropped ones fade out.
     private func rebuildRows(select: Int? = nil) {
+        // With favicons on, every row has an icon so the titles line up: the site's, or a plain globe.
+        let showsIcons = BrowserSettings.showsFavicons
         let items = entries.map {
             let title = $0.title.trimmingCharacters(in: .whitespacesAndNewlines)
-            return (key: $0.url.absoluteString, primary: title.isEmpty ? $0.display : title, secondary: title.isEmpty ? "" : $0.display)
+            return (
+                key: $0.url.absoluteString, primary: title.isEmpty ? $0.display : title, secondary: title.isEmpty ? "" : $0.display,
+                icon: showsIcons ? Favicons.shared.icon(for: $0.url) ?? SuggestionRow.globe : nil
+            )
         }
 
         let existing = Dictionary(rows.map { ($0.key, $0) }, uniquingKeysWith: { first, _ in first })
         var entering: [SuggestionRow] = []
         let updated = items.map { item -> SuggestionRow in
             if let row = existing[item.key] {
-                row.update(primary: item.primary, secondary: item.secondary)
+                row.update(primary: item.primary, secondary: item.secondary, icon: item.icon)
                 return row
             }
-            let row = SuggestionRow(key: item.key, primary: item.primary, secondary: item.secondary)
+            let row = SuggestionRow(key: item.key, primary: item.primary, secondary: item.secondary, icon: item.icon)
             row.alphaValue = 0
             rowsClip.addSubview(row)
             entering.append(row)
@@ -305,8 +310,18 @@ private final class SearchHint: NSTextField {
     override func hitTest(_ point: NSPoint) -> NSView? { nil }
 }
 
-/// One history suggestion. `key` identifies it across keystrokes so its row can be kept.
+/// Holds the suggestion rows, laid out from the top like everything else in the address field.
+private final class RowsClip: NSView {
+    override var isFlipped: Bool { true }
+}
+
+/// One history suggestion, led by its site's icon when it is given one. `key` identifies it across
+/// keystrokes so its row can be kept.
 private final class SuggestionRow: NSView {
+    /// Stands in for a site whose icon isn't known yet.
+    static let globe = NSImage(systemSymbolName: "globe", accessibilityDescription: nil)?
+        .withSymbolConfiguration(.init(pointSize: 13, weight: .regular))
+
     let key: String
     var onClick: (() -> Void)?
     /// Shown by contrast alone: the selected or hovered row's text is full strength, the rest recede.
@@ -315,12 +330,15 @@ private final class SuggestionRow: NSView {
 
     private let primary: NSTextField
     private let secondary: NSTextField
+    private let iconView = NSImageView()
 
-    init(key: String, primary: String, secondary: String) {
+    init(key: String, primary: String, secondary: String, icon: NSImage?) {
         self.key = key
         self.primary = NSTextField(labelWithString: primary)
         self.secondary = NSTextField(labelWithString: secondary)
         super.init(frame: .zero)
+        setIcon(icon)
+        addSubview(iconView)
         self.primary.wantsLayer = true
         self.primary.font = .systemFont(ofSize: 13)
         self.primary.textColor = .secondaryLabelColor
@@ -339,11 +357,19 @@ private final class SuggestionRow: NSView {
     override var isFlipped: Bool { true }
     override func hitTest(_ point: NSPoint) -> NSView? { super.hitTest(point) == nil ? nil : self }
 
-    func update(primary: String, secondary: String) {
-        guard primary != self.primary.stringValue || secondary != self.secondary.stringValue else { return }
+    func update(primary: String, secondary: String, icon: NSImage?) {
+        guard primary != self.primary.stringValue || secondary != self.secondary.stringValue || icon !== iconView.image
+        else { return }
         self.primary.stringValue = primary
         self.secondary.stringValue = secondary
+        setIcon(icon)
         needsLayout = true
+    }
+
+    /// A single-tone site icon is drawn like the row's text; the globe recedes further.
+    private func setIcon(_ icon: NSImage?) {
+        iconView.image = icon
+        iconView.contentTintColor = icon === Self.globe ? .tertiaryLabelColor : .secondaryLabelColor
     }
 
     private func updateEmphasis() {
@@ -356,7 +382,8 @@ private final class SuggestionRow: NSView {
 
     override func layout() {
         super.layout()
-        let x: CGFloat = 10
+        let x: CGFloat = iconView.image == nil ? 10 : 33
+        iconView.frame = NSRect(x: 9, y: 6.5, width: 16, height: 16)
         let available = bounds.width - x - 10
         let primaryWidth = min(primary.intrinsicContentSize.width, available)
         primary.frame = NSRect(x: x, y: 7, width: primaryWidth, height: 16)

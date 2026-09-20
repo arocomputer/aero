@@ -8,6 +8,8 @@ let appName = Bundle.main.object(forInfoDictionaryKey: "CFBundleName") as? Strin
 @main
 final class AppDelegate: NSObject, NSApplicationDelegate, ASWebAuthenticationSessionWebBrowserSessionHandling {
     private var windows: [BrowserWindowController] = []
+    /// When the system runs short of memory, tabs hidden for a minute sleep without waiting out the half hour.
+    private let memoryPressure = DispatchSource.makeMemoryPressureSource(eventMask: [.warning, .critical], queue: .main)
 
     static func main() {
         AppPaths.migratePreviousIdentity()
@@ -25,6 +27,8 @@ final class AppDelegate: NSObject, NSApplicationDelegate, ASWebAuthenticationSes
 
     func applicationDidFinishLaunching(_ notification: Notification) {
         NSApp.mainMenu = AppMenu.make()
+        memoryPressure.setEventHandler { [weak self] in self?.windows.forEach { $0.sleepIdleTabs(hiddenFor: 60) } }
+        memoryPressure.resume()
         let authenticationSessions = ASWebAuthenticationSessionWebBrowserSessionManager.shared
         authenticationSessions.sessionHandler = self
         WebExtensions.shared.loadInstalled()
@@ -53,6 +57,11 @@ final class AppDelegate: NSObject, NSApplicationDelegate, ASWebAuthenticationSes
         controller.showWindow(nil)
         controller.registerWithExtensions()
         return controller
+    }
+
+    /// Tells every window that the favicons setting changed; the strips follow at once.
+    func faviconsSettingChanged() {
+        windows.forEach { $0.faviconsSettingChanged() }
     }
 
     @objc func installExtension(_ sender: Any?) {

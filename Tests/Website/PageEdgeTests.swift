@@ -58,3 +58,56 @@ import Testing
     await fixture.wait()
     #expect(fixture.snapshots == 1)
 }
+
+@MainActor @Test func aNewLookOfTheSameElementIsSnapshottedAgain() async {
+    let fixture = Fixture()
+    fixture.edge.report("unknown:1:clear")
+    await fixture.wait()
+    fixture.edge.report("unknown:1:solid")
+    await fixture.wait()
+    #expect(fixture.snapshots == 2)
+}
+
+@MainActor @Test func snapshotsPerPageAreCapped() async {
+    let fixture = Fixture()
+    for look in 0..<(PageEdge.maxSnapshots + 3) {
+        fixture.edge.report("unknown:1:\(look)")
+        await fixture.wait(0.08)
+    }
+    #expect(fixture.snapshots == PageEdge.maxSnapshots)
+}
+
+@MainActor @Test func colorKeptAcrossAPageOfTheSameSiteLastsUntilItsFirstReport() {
+    let fixture = Fixture()
+    fixture.edge.report("10,20,30")
+    fixture.edge.reset(keepingColor: true)
+    #expect(fixture.edge.color != nil)
+    fixture.edge.report("page")
+    #expect(fixture.edge.color == nil)
+
+    fixture.edge.report("10,20,30")
+    fixture.edge.reset()
+    #expect(fixture.edge.color == nil)
+}
+
+@MainActor @Test func aBlurringHeaderReportsHowOpaqueItsTintIs() {
+    let fixture = Fixture()
+    fixture.edge.report("15,15,14|0.88")
+    #expect(fixture.edge.color == NSColor(srgbRed: 15 / 255, green: 15 / 255, blue: 14 / 255, alpha: 1))
+    #expect(fixture.edge.opacity == 0.88)
+
+    fixture.edge.report("0,0,0")
+    #expect(fixture.edge.opacity == nil)
+}
+
+@MainActor @Test func aFadingHeaderReportsHowLongItTakes() {
+    let fixture = Fixture()
+    fixture.edge.report("0,0,0|0.80~300")
+    #expect(fixture.edge.color == NSColor(srgbRed: 0, green: 0, blue: 0, alpha: 1))
+    #expect(fixture.edge.opacity == 0.8)
+    #expect(fixture.edge.glide == 0.3)
+    #expect(fixture.edge.isFromStyles)
+
+    fixture.edge.report("unknown:1:look")
+    #expect(!fixture.edge.isFromStyles)
+}
