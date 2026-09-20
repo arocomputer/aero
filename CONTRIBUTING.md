@@ -11,11 +11,13 @@ abstraction before adding one.
 git clone https://github.com/arocomputer/aero
 cd aero
 ./x hooks
+(cd Websites && npm ci)
 ./x run
 ```
 
 Aero needs macOS 15.4 or newer and a Swift 6 toolchain. The Command Line Tools are enough.
-Install Python 3 for repository tooling. Contributors using the managed `~/Code`
+Install Python 3 for repository tooling and Node.js 22 or newer for the website.
+Contributors using the managed `~/Code`
 collection should follow its README and use a worktree.
 
 Read [AGENTS.md](AGENTS.md) for the code map, focused test commands, and app
@@ -50,11 +52,12 @@ paste private addresses, history, page content, or unreviewed logs.
 ## Before opening a PR
 
 ```sh
-./x check    # format lint, warnings as errors, guard, hook tests, unit tests
+./x check    # check the native app and website
 ./x run      # build the app and look at the change
 ```
 
-Run `./x check` for every submission. Every PR reports two required results.
+Run `./x check` for every submission. Every pull request reports two required results.
+Changes to `Websites/`, its workflow, or `x` also report `Website / Website Check`.
 
 | Required check | Local command | Coverage |
 | --- | --- | --- |

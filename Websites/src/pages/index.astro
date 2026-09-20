@@ -1,0 +1,27 @@
+---
+/** Aero's product page introduces the native macOS browser. */
+import Header from "@/components/Header.astro";
+import Site from "@/layouts/Site.astro";
+import wordmarkUrl from "@/assets/wordmark.svg?url";
+---
+
+<Site canonical="https://aerobrowser.app">
+  <Header />
+  <main id="main">
+    <section class="aero-home" aria-labelledby="aero-title">
+      <img class="aero-home-wordmark" src={wordmarkUrl} alt="Aero" />
+      <h1 id="aero-title">
+        <span>Extremely fast.</span>
+        <span>For agents and humans.</span>
+      </h1>
+      <p class="aero-home-status">In Development</p>
+    </section>
+  </main>
+
+  <footer class="aero-footer">
+    <p>
+      © 2026 Fischer Hunt, doing business as{" "}
+      <a href="https://aro.computer">The Aro Computer Co.</a>
+    </p>
+  </footer>
+</Site>

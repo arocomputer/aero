@@ -1,0 +1,333 @@
+/* Aero's website uses a monochrome canvas with a detached liquid-glass header. */
+:root {
+  color-scheme: light;
+  font-family: "Montserrat Variable", "Montserrat Fallback", sans-serif;
+  background: #fff;
+  color: #111;
+  font-synthesis: none;
+  text-rendering: optimizeLegibility;
+}
+
+* {
+  box-sizing: border-box;
+}
+
+html {
+  min-height: 100%;
+}
+
+body {
+  min-height: 100vh;
+  margin: 0;
+  background:
+    radial-gradient(circle at 50% 30%, rgb(0 0 0 / 6%), transparent 31rem), #fff;
+}
+
+a {
+  color: inherit;
+}
+
+.aero-skip-link {
+  position: fixed;
+  z-index: 20;
+  top: 1rem;
+  left: 1rem;
+  padding: 0.7rem 1rem;
+  border-radius: 999px;
+  background: #111;
+  color: #fff;
+  transform: translateY(-200%);
+}
+
+.aero-skip-link:focus {
+  transform: translateY(0);
+}
+
+.aero-header {
+  position: fixed;
+  z-index: 10;
+  top: 24px;
+  left: 50%;
+  display: flex;
+  width: min(calc(100% - 48px), 1180px);
+  min-height: 68px;
+  align-items: center;
+  justify-content: space-between;
+  gap: 24px;
+  padding: 10px 12px 10px 24px;
+  overflow: hidden;
+  border: 1px solid rgb(255 255 255 / 78%);
+  border-radius: 999px;
+  background:
+    linear-gradient(
+      115deg,
+      rgb(255 255 255 / 76%) 0%,
+      rgb(255 255 255 / 42%) 42%,
+      rgb(255 255 255 / 66%) 100%
+    ),
+    rgb(255 255 255 / 36%);
+  box-shadow:
+    0 1px 0 rgb(255 255 255 / 96%) inset,
+    0 -1px 0 rgb(17 17 17 / 8%) inset,
+    0 18px 55px rgb(17 17 17 / 16%),
+    0 3px 12px rgb(17 17 17 / 8%);
+  color: #111;
+  transform: translateX(-50%);
+  backdrop-filter: blur(30px) saturate(180%);
+  -webkit-backdrop-filter: blur(30px) saturate(180%);
+  isolation: isolate;
+}
+
+.aero-header::before,
+.aero-header::after {
+  position: absolute;
+  z-index: -1;
+  content: "";
+  pointer-events: none;
+}
+
+.aero-header::before {
+  inset: 1px;
+  border-radius: inherit;
+  background:
+    radial-gradient(ellipse at 18% 0%, rgb(255 255 255 / 88%), transparent 42%),
+    linear-gradient(
+      100deg,
+      transparent 24%,
+      rgb(255 255 255 / 48%) 48%,
+      transparent 72%
+    );
+  opacity: 0.72;
+}
+
+.aero-header::after {
+  top: 3px;
+  right: 10%;
+  left: 10%;
+  height: 1px;
+  background: linear-gradient(
+    90deg,
+    transparent,
+    rgb(255 255 255 / 92%),
+    transparent
+  );
+  filter: blur(0.5px);
+}
+
+.aero-header-brand {
+  display: flex;
+  flex: 0 0 auto;
+  align-items: center;
+  gap: 10px;
+}
+
+.aero-header-brand img {
+  display: block;
+  width: auto;
+  height: 30px;
+}
+
+.aero-header-brand .aero-header-mark {
+  width: auto;
+  height: 30px;
+}
+
+.aero-header nav {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  font-size: 13px;
+}
+
+.aero-header nav a {
+  display: inline-flex;
+  min-height: 44px;
+  align-items: center;
+  padding-inline: 15px;
+  border-radius: 999px;
+  text-decoration: none;
+  white-space: nowrap;
+}
+
+.aero-header nav a:hover,
+.aero-header nav a:focus-visible {
+  background: rgb(17 17 17 / 8%);
+}
+
+.aero-header nav .aero-header-action {
+  margin-left: 6px;
+  padding-inline: 20px;
+  background: #111;
+  color: #fff;
+}
+
+.aero-header nav .aero-header-action:hover,
+.aero-header nav .aero-header-action:focus-visible {
+  background: #242424;
+}
+
+.aero-header :focus-visible {
+  outline: 2px solid #111;
+  outline-offset: 2px;
+}
+
+main,
+.aero-footer {
+  width: min(calc(100% - 48px), 1180px);
+  margin-inline: auto;
+}
+
+.aero-home {
+  display: flex;
+  min-height: 100svh;
+  align-items: center;
+  justify-content: center;
+  flex-direction: column;
+  padding: 148px 0 88px;
+  text-align: center;
+}
+
+.aero-home-wordmark {
+  display: block;
+  width: clamp(108px, 10vw, 142px);
+  height: auto;
+  margin-bottom: 30px;
+}
+
+.aero-home h1 {
+  max-width: 1180px;
+  margin: 0;
+  color: #111;
+  font-size: clamp(26px, 6vw, 82px);
+  font-weight: 600;
+  line-height: 0.98;
+  text-wrap: balance;
+}
+
+.aero-home h1 span {
+  display: block;
+  white-space: nowrap;
+}
+
+.aero-home-status {
+  margin: 24px 0 0;
+  color: rgb(17 17 17 / 48%);
+  font-size: 13px;
+  line-height: 1.4;
+}
+
+.aero-footer a:focus-visible {
+  outline: 2px solid #111;
+  outline-offset: 4px;
+}
+
+.aero-footer {
+  display: flex;
+  min-height: 120px;
+  align-items: center;
+  justify-content: center;
+  gap: 24px;
+  padding-block: 30px;
+  border-top: 1px solid rgb(17 17 17 / 14%);
+  color: rgb(17 17 17 / 48%);
+  font-size: 12px;
+  text-align: center;
+}
+
+.aero-footer p {
+  margin: 0;
+}
+
+.aero-footer a {
+  text-underline-offset: 0.3em;
+}
+
+.aero-not-found {
+  display: flex;
+  min-height: 100svh;
+  width: min(calc(100% - 48px), 48rem);
+  margin: 0 auto;
+  align-items: center;
+  justify-content: center;
+  flex-direction: column;
+  padding-top: 110px;
+  text-align: center;
+}
+
+.aero-not-found img {
+  width: 3rem;
+  margin-bottom: 2rem;
+}
+
+.aero-not-found p {
+  margin-bottom: 0.75rem;
+  color: rgb(17 17 17 / 54%);
+}
+
+.aero-not-found h1 {
+  margin-bottom: 2rem;
+  font-size: clamp(2.5rem, 8vw, 5rem);
+}
+
+.aero-link {
+  font-weight: 600;
+  text-underline-offset: 0.35em;
+}
+
+@media (max-width: 600px) {
+  .aero-header {
+    top: 12px;
+    width: calc(100% - 24px);
+    min-height: 58px;
+    padding: 7px 7px 7px 18px;
+  }
+
+  .aero-header-brand {
+    gap: 8px;
+  }
+
+  .aero-header-brand img,
+  .aero-header-brand .aero-header-mark {
+    height: 25px;
+  }
+
+  .aero-header nav {
+    gap: 0;
+    font-size: 12px;
+  }
+
+  .aero-header nav a {
+    min-height: 42px;
+    padding-inline: 12px;
+  }
+
+  .aero-header nav .aero-header-action {
+    margin-left: 0;
+    padding-inline: 15px;
+  }
+
+  main,
+  .aero-footer {
+    width: min(calc(100% - 32px), 1180px);
+  }
+
+  .aero-home {
+    padding: 126px 0 64px;
+  }
+
+  .aero-home h1 {
+    font-size: clamp(26px, 6vw, 82px);
+  }
+}
+
+@media (prefers-reduced-motion: no-preference) {
+  html {
+    scroll-behavior: smooth;
+  }
+
+  .aero-skip-link,
+  .aero-header a {
+    transition: 160ms ease;
+    transition-property: background-color, color, transform;
+  }
+}

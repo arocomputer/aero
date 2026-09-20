@@ -1,0 +1,8 @@
+# Security contact for aerobrowser.app, following RFC 9116.
+
+Contact: https://aro.computer/report-vulnerability
+Contact: mailto:security@aro.computer
+Expires: 2027-07-31T00:00:00.000Z
+Preferred-Languages: en
+Canonical: https://aerobrowser.app/.well-known/security.txt
+Policy: https://aro.computer/report-vulnerability
