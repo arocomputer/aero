@@ -2,17 +2,19 @@ import AppKit
 
 /// The window's content view: the strip fills the system titlebar area, content and address field fill the rest.
 final class RootView: NSView {
-    private let strip: Strip, content: NSView, omnibox: NSView
+    private let strip: Strip, content: NSView, omnibox: NSView, linkBubble: NSView
     private let menuPanel: MenuPanel, find: FindBar
     /// Kept from the last windowed layout, because in full screen the titlebar leaves the window.
     private var stripHeight: CGFloat = 52
     /// The traffic lights' frames as the system lays them out, captured before they are first enlarged.
     private var systemLights: [NSRect] = []
 
-    init(strip: Strip, content: NSView, omnibox: NSView, menuPanel: MenuPanel, find: FindBar) {
+    init(strip: Strip, content: NSView, linkBubble: NSView, omnibox: NSView, menuPanel: MenuPanel, find: FindBar) {
         (self.strip, self.content, self.omnibox, self.menuPanel, self.find) = (strip, content, omnibox, menuPanel, find)
+        self.linkBubble = linkBubble
         super.init(frame: .zero)
-        [content, omnibox, strip, menuPanel, find].forEach(addSubview)
+        // The bubble lies over the page and under the address field, which covers the page when it shows.
+        [content, linkBubble, omnibox, strip, menuPanel, find].forEach(addSubview)
     }
 
     required init?(coder: NSCoder) { fatalError("not used") }
@@ -60,6 +62,7 @@ final class RootView: NSView {
         strip.frame = NSRect(x: 0, y: 0, width: bounds.width, height: stripHeight)
         content.frame = NSRect(x: 0, y: stripHeight, width: bounds.width, height: bounds.height - stripHeight)
         omnibox.frame = content.frame
+        linkBubble.frame = content.frame
         menuPanel.frame = bounds
         find.frame = bounds
         if let window, let close = window.standardWindowButton(.closeButton), !window.styleMask.contains(.fullScreen) {

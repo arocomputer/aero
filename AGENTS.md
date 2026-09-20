@@ -57,10 +57,10 @@ Info.plist                      bundle template; ./x app fills __NAME__ and __BU
 x                               contributor and CI commands; also holds the product name
 Sources/                        the app, one folder per feature
   App/                          entry point, main menu, app paths, passkeys
-  Window/                       the browser window and its controller, the browser menu, find
+  Window/                       the browser window and its controller, the browser menu, find, the link bubble
   Strip/                        the tab strip and its items
   Omnibox/                      the address field, address parsing, history
-  Page/                         a tab and its page: top-edge color, site icons, reload hold
+  Page/                         a tab and its page: top-edge color, hovered link, site icons, reload hold
   Settings/                     preferences and the settings page
   Downloads/                    WebKit downloads, destinations and current-session state
   Extensions/                   catalog, installed WebExtensions, permissions, actions and popups

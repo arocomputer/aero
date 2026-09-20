@@ -14,6 +14,7 @@ final class WindowController: NSWindowController, NSWindowDelegate, WKWebExtensi
     let strip = Strip()
     private let content = NSView()
     private let omnibox = Omnibox()
+    private let linkBubble = LinkBubble()
     private let menuPanel = MenuPanel()
     private let find = FindBar()
     private var scrollMonitor: Any?
@@ -45,7 +46,8 @@ final class WindowController: NSWindowController, NSWindowDelegate, WKWebExtensi
         super.init(window: window)
         window.delegate = self
 
-        let root = RootView(strip: strip, content: content, omnibox: omnibox, menuPanel: menuPanel, find: find)
+        let root = RootView(
+            strip: strip, content: content, linkBubble: linkBubble, omnibox: omnibox, menuPanel: menuPanel, find: find)
         window.contentView = root
         strip.controller = self
         downloads.onChange = { [weak self] in self?.downloadsDidChange() }
@@ -99,6 +101,7 @@ final class WindowController: NSWindowController, NSWindowDelegate, WKWebExtensi
         guard tab !== active else { return }
         menuPanel.dismiss()
         find.dismiss()
+        linkBubble.dismiss()
         let previous = active
         active?.webView.removeFromSuperview()
         previous?.hiddenSince = Date()
@@ -171,6 +174,17 @@ final class WindowController: NSWindowController, NSWindowDelegate, WKWebExtensi
         guard tab === active else { return }
         window?.title = tab.title
         applyTint(of: tab)
+    }
+
+    /// Called when the pointer moves onto a link in a tab's page, or off it with nil. Only the page
+    /// that shows has a pointer over it; a report from any other is late and is dropped.
+    func tab(_ tab: Tab, isOverLink address: String?) {
+        if tab === active { linkBubble.show(address) }
+    }
+
+    /// Called when a tab's page is replaced: what the pointer was over is gone with it.
+    func tabDidLeavePage(_ tab: Tab) {
+        if tab === active { linkBubble.dismiss() }
     }
 
     /// Called by tabs when only their top edge changed, which happens continuously while scrolling.
@@ -309,6 +323,7 @@ final class WindowController: NSWindowController, NSWindowDelegate, WKWebExtensi
         guard let active else { return }
         menuPanel.dismiss()
         find.dismiss()
+        linkBubble.dismiss()
         let text = active.webView.url.map(AddressInput.display(for:)) ?? ""
         active.omniboxDraft = text
         active.isOmniboxOpen = true

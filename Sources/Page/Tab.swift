@@ -319,6 +319,7 @@ final class Tab: NSObject, WKNavigationDelegate, WKUIDelegate, WKWebExtensionTab
         configuration.applicationNameForUserAgent = "Version/\(system >= 26 ? system : system + 3).0 Safari/605.1.15"
         configuration.preferences.isElementFullscreenEnabled = true
         TintRouter.install(in: configuration.userContentController)
+        HoveredLink.install(in: configuration.userContentController)
         configuration.userContentController.addUserScript(
             WKUserScript(source: noteEditing, injectionTime: .atDocumentStart, forMainFrameOnly: true, in: .defaultClient))
         return configuration
@@ -444,6 +445,7 @@ final class Tab: NSObject, WKNavigationDelegate, WKUIDelegate, WKWebExtensionTab
 
     func webView(_ webView: WKWebView, didCommit navigation: WKNavigation!) {
         if let url = webView.url { History.shared.visit(url) }
+        owner?.tabDidLeavePage(self)
         showRememberedFavicon(for: webView.url)
         let host = webView.url?.host
         pageTint.reset(holding: host != nil && host == committedHost ? 2 : 0.25)

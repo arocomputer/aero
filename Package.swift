@@ -10,6 +10,7 @@ let package = Package(
             path: "Sources",
             resources: [
                 .copy("Extensions/Extensions.html"), .copy("Settings/Settings.html"), .copy("Page/PageTint.js"),
+                .copy("Page/HoveredLink.js"),
             ],
             swiftSettings: [.swiftLanguageMode(.v5)]),
         .testTarget(
