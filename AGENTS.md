@@ -57,10 +57,10 @@ Info.plist                      bundle template; ./x app fills __NAME__ and __BU
 x                               contributor and CI commands; also holds the product name
 Sources/                        the app, one folder per feature
   App/                          entry point, main menu, app paths, passkeys
-  Window/                       the browser window and its controller, the browser menu, find
+  Window/                       the browser window and its controller, the browser menu, find, the link bubble
   Strip/                        the tab strip and its items
   Omnibox/                      the address field, address parsing, history
-  Page/                         a tab and its page: top-edge color, site icons, reload hold
+  Page/                         a tab and its page: top-edge color, hovered link, site icons, reload hold
   Settings/                     preferences and the settings page
   Downloads/                    WebKit downloads, destinations and current-session state
   Extensions/                   catalog, installed WebExtensions, permissions, actions and popups
@@ -111,7 +111,8 @@ better way to meet one of them is welcome; change the code and its comments, not
 - The window is the system's: a toolbar window with the system's corners, titlebar height and
   traffic lights, drawn larger but never replaced.
 - Motion marks things that appear, leave or move, is brief and can be interrupted. Typed text is
-  never animated. A reload should look as if nothing moved.
+  never animated, and neither is the address field: it and its suggestions appear and change at
+  once. A reload should look as if nothing moved.
 - Aero has no Swift package dependencies, and `Scripts/guard.py` enforces it.
 - The product name lives in `x` and the bundle. Do not hardcode it in sources.
 

@@ -16,6 +16,7 @@ WebKit, with no package dependencies. The executable is under 1 MB.
 - The strip takes the color of the page's header, hero or sidebar, so it reads as part of the page.
 - The active tab doubles as the loading bar.
 - Tabs and address suggestions show each site's icon; Settings can turn that off.
+- Hovering a link shows where it really leads, in a small card at the bottom of the page.
 - Pinned tabs show as their site's icon or a monogram, can't be closed, and come back on the next launch.
 - Tabs you haven't looked at for half an hour give their memory back and reload where you left
   them when you return.
