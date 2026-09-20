@@ -29,7 +29,7 @@ WebKit, with no package dependencies. The executable is under 1 MB.
 ## Build
 
 Aero needs macOS 15.4 or newer and a Swift 6 toolchain. The Command Line Tools are enough;
-Xcode is not required. The website under `Websites/` needs Node.js 22 or newer.
+Xcode is not required. The website under `Website/` needs Node.js 22 or newer.
 
 ```sh
 ./x run      # build build/Aero.app and open it

@@ -13,7 +13,7 @@ def git(*args):
 def install():
     """Do not replace other active hooks; each linked worktree opts into its own checkout."""
     root = Path(git('rev-parse', '--show-toplevel'))
-    hooks = root / 'scripts/hooks'
+    hooks = root / 'Scripts/hooks'
     configured = subprocess.run(['git', 'config', '--path', '--get', 'core.hooksPath'], capture_output=True, text=True)
     previous = Path(configured.stdout.strip()) if configured.returncode == 0 else Path(git('rev-parse', '--git-path', 'hooks'))
     previous = previous.resolve()

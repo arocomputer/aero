@@ -41,14 +41,14 @@ case "$command" in
     swift_with_selected_sdk test -Xswiftc -plugin-path -Xswiftc "$(xcode-select -p)/usr/lib/swift/host/plugins/testing" "$@"
     ;;
   guard)
-    python3 scripts/guard.py
-    python3 -m unittest discover -s scripts/hooks -p 'test_*.py'
+    python3 Scripts/guard.py
+    python3 -m unittest discover -s Scripts/hooks -p 'test_*.py'
     ;;
-  hooks) python3 scripts/hooks/install.py ;;
+  hooks) python3 Scripts/hooks/install.py ;;
   website)
     website_command=${1:-check}
     if [ "$#" -gt 0 ]; then shift; fi
-    (cd Websites && npm run "$website_command" -- "$@")
+    (cd Website && npm run "$website_command" -- "$@")
     ;;
   app)
     swift_with_selected_sdk build -c release
@@ -58,7 +58,7 @@ case "$command" in
     mkdir -p "$APP/Contents/Resources"
     cp -R .build/release/Browser_Browser.bundle "$APP/Contents/Resources/"
     sed -e "s/__NAME__/$NAME/g" -e "s/__BUNDLE_ID__/$BUNDLE_ID/g" Info.plist > "$APP/Contents/Info.plist"
-    scripts/icon.sh Assets/app.icon "$APP/Contents/Resources"
+    Scripts/icon.sh Assets/app.icon "$APP/Contents/Resources"
     codesign --force --sign - "$APP"
     ;;
   signed-app)
@@ -75,6 +75,6 @@ case "$command" in
     ./x app
     open "$APP"
     ;;
-  clean) rm -rf .build build Websites/.astro Websites/.wrangler Websites/dist ;;
+  clean) rm -rf .build build Website/.astro Website/.wrangler Website/dist ;;
   *) echo 'usage: ./x [hooks|check|quality|fmt|lint|test|guard|website|app|signed-app|run|clean]' >&2; exit 2 ;;
 esac

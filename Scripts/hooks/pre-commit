@@ -5,4 +5,4 @@ previous=$(git config --get aero.previousPreCommit || true)
 if [ -n "$previous" ] && [ -x "$previous" ]; then
   "$previous" "$@"
 fi
-exec python3 scripts/hooks/check.py
+exec python3 Scripts/hooks/check.py

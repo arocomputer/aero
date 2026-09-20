@@ -34,7 +34,7 @@ tab and on Command-L. The repository is `arocomputer/aero`. The Swift module is
 
 Aero needs macOS 15.4 or newer and a Swift 6 toolchain. The Command Line Tools are enough;
 Xcode is not required. Python 3 runs repository tooling. The website needs Node.js 22 or
-newer and `npm ci` from `Websites/`. CI runs the same checks.
+newer and `npm ci` from `Website/`. CI runs the same checks.
 
 `./x quality` runs `./x lint` and `./x guard`. `./x lint` checks formatting with
 `swift format` in strict mode and builds with warnings as errors. `./x fmt` formats in
@@ -43,11 +43,11 @@ place. `./x test` runs the unit tests. `./x app` builds the release bundle, fill
 the static site.
 
 Required checks are `Validate` from Quality and `Build and Test` from App. `Website
-Check` runs when `Websites/`, its workflow, or `x` changes. Keep those names aligned
+Check` runs when `Website/`, its workflow, or `x` changes. Keep those names aligned
 with repository rules.
 
 The icon is `Assets/app.icon`, an Icon Composer document. That format is a
-folder holding `icon.json` and its artwork; Finder shows it as one file. With Xcode installed, `scripts/icon.sh`
+folder holding `icon.json` and its artwork; Finder shows it as one file. With Xcode installed, `Scripts/icon.sh`
 compiles it with `actool` into `Assets.car`, and macOS renders the Default, Dark, Clear and Tinted looks.
 Without Xcode it renders a plain `.icns` of the Default look with Icon Composer's `ictool`.
 The `actool` path is covered by `./x app` on a Mac with Xcode installed.
@@ -69,8 +69,8 @@ Sources/                        the app, one folder per feature
   Extensions/                   catalog, installed WebExtensions, permissions, actions and popups
 Tests/                          focused unit tests, grouped like the source tree
 Assets/                         the app icon's Icon Composer source, logo and wordmark
-Websites/                       aerobrowser.app source, checks, and deployment
-scripts/                        guard, commit hooks and their tests, icon packaging
+Website/                       aerobrowser.app source, checks, and deployment
+Scripts/                        guard, commit hooks and their tests, icon packaging
 ```
 
 ## Fast test loops
@@ -79,7 +79,7 @@ scripts/                        guard, commit hooks and their tests, icon packag
 ./x test --filter PageTint
 ./x test --filter History
 ./x test --filter AddressInput
-python3 -m unittest discover -s scripts/hooks -p 'test_*.py'
+python3 -m unittest discover -s Scripts/hooks -p 'test_*.py'
 ```
 
 Tests should pin observable behavior. A regression test must fail against the unfixed
@@ -115,7 +115,7 @@ better way to meet one of them is welcome; change the code and its comments, not
   traffic lights, drawn larger but never replaced.
 - Motion marks things that appear, leave or move, is brief and can be interrupted. Typed text is
   never animated. A reload should look as if nothing moved.
-- Aero has no Swift package dependencies, and `scripts/guard.py` enforces it.
+- Aero has no Swift package dependencies, and `Scripts/guard.py` enforces it.
 - The product name lives in `x` and the bundle. Do not hardcode it in sources.
 
 ## Naming and documentation
@@ -157,7 +157,7 @@ keeps past decisions.
 are pinned to full commit SHAs and workflows use minimal permissions. Never execute
 contributor code with a privileged PR token.
 
-`scripts/guard.py` checks action pins and that `Package.swift` declares no dependencies.
+`Scripts/guard.py` checks action pins and that `Package.swift` declares no dependencies.
 A legitimate boundary change updates the guard with an explanation; do not bypass it.
 The website deploys separately from app releases.
 See CONTRIBUTING.md before preparing a release.

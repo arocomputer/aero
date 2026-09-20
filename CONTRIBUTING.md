@@ -11,7 +11,7 @@ abstraction before adding one.
 git clone https://github.com/arocomputer/aero
 cd aero
 ./x hooks
-(cd Websites && npm ci)
+(cd Website && npm ci)
 ./x run
 ```
 
@@ -57,7 +57,7 @@ paste private addresses, history, page content, or unreviewed logs.
 ```
 
 Run `./x check` for every submission. Every pull request reports two required results.
-Changes to `Websites/`, its workflow, or `x` also report `Website / Website Check`.
+Changes to `Website/`, its workflow, or `x` also report `Website / Website Check`.
 
 | Required check | Local command | Coverage |
 | --- | --- | --- |
