@@ -5,12 +5,10 @@ let package = Package(
     name: "Browser",
     platforms: [.macOS("15.4")],
     targets: [
-        // The icon is packaged separately from the executable.
         .executableTarget(
             name: "Browser",
             path: "Sources",
-            exclude: ["UI/app.icon"],
-            resources: [.copy("Extensions/Extensions.html"), .copy("UI/Settings.html")],
+            resources: [.copy("Extensions/Extensions.html"), .copy("Settings/Settings.html")],
             swiftSettings: [.swiftLanguageMode(.v5)]),
         .testTarget(
             name: "BrowserTests",

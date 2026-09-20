@@ -44,7 +44,7 @@ place. `./x test` runs the unit tests. `./x app` builds the release bundle, fill
 Required checks are `Validate` from Quality and `Build and Test` from App. Keep those
 names aligned with repository rules.
 
-The icon is `Sources/UI/app.icon`, an Icon Composer document. That format is a
+The icon is `Assets/app.icon`, an Icon Composer document. That format is a
 folder holding `icon.json` and its artwork; Finder shows it as one file. With Xcode installed, `scripts/icon.sh`
 compiles it with `actool` into `Assets.car`, and macOS renders the Default, Dark, Clear and Tinted looks.
 Without Xcode it renders a plain `.icns` of the Default look with Icon Composer's `ictool`.
@@ -56,13 +56,18 @@ The `actool` path is covered by `./x app` on a Mac with Xcode installed.
 Package.swift                   one executable target, Browser, and its tests
 Info.plist                      bundle template; ./x app fills __NAME__ and __BUNDLE_ID__
 x                               contributor and CI commands; also holds the product name
-Sources/Core/                   entry point, menus, app paths, addresses and history
-Sources/Downloads/              WebKit downloads, destinations and current-session state
-Sources/Extensions/             catalog, installed WebExtensions, permissions, actions and popups
-Sources/UI/                     windows, tab strip, address field and app icon
-  app.icon/                     Icon Composer source for the app icon; excluded from the target
-Sources/Website/                web views, page-edge color sampling, site icons, pins and reload hold
+Sources/                        the app, one folder per feature
+  App/                          entry point, main menu, app paths, passkeys
+  Window/                       the browser window and its controller, the browser menu, find
+  Strip/                        the tab strip and its items
+  Omnibox/                      the address field, address parsing, history
+  Page/                         a tab and its page: top-edge color, site icons, reload hold
+  Settings/                     preferences and the settings page
+  Downloads/                    WebKit downloads, destinations and current-session state
+  Extensions/                   catalog, installed WebExtensions, permissions, actions and popups
 Tests/                          focused unit tests, grouped like the source tree
+Assets/                         the app icon's Icon Composer source, logo and wordmark
+Website/                        the marketing website; not part of the Swift package
 scripts/                        guard, commit hooks and their tests, icon packaging
 ```
 

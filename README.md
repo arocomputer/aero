@@ -38,7 +38,7 @@ Xcode is not required.
 
 The product name lives in one place, `NAME` in `x`.
 
-The app icon is `Sources/UI/app.icon`, an Icon Composer document. With Xcode installed the build
+The app icon is `Assets/app.icon`, an Icon Composer document. With Xcode installed the build
 compiles it with `actool`, and macOS renders its Default, Dark, Clear and Tinted looks.
 Without Xcode it falls back to a plain `.icns` of the Default look, rendered by Icon
 Composer.

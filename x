@@ -52,7 +52,7 @@ case "$command" in
     mkdir -p "$APP/Contents/Resources"
     cp -R .build/release/Browser_Browser.bundle "$APP/Contents/Resources/"
     sed -e "s/__NAME__/$NAME/g" -e "s/__BUNDLE_ID__/$BUNDLE_ID/g" Info.plist > "$APP/Contents/Info.plist"
-    scripts/icon.sh Sources/UI/app.icon "$APP/Contents/Resources"
+    scripts/icon.sh Assets/app.icon "$APP/Contents/Resources"
     codesign --force --sign - "$APP"
     ;;
   signed-app)
