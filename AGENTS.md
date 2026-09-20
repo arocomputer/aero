@@ -14,9 +14,6 @@ tab and on Command-L. The repository is `arocomputer/aero`. The Swift module is
 - Preserve unrelated changes. Never revert or reformat files outside the task.
 - Never expose secrets. History, addresses and page content are private; keep them out
   of fixtures, screenshots and logs.
-- In a managed `~/Code` collection, follow its README and work in a managed worktree.
-  Base checkouts under `repos/` are for updates, not coding. Other contributors can
-  use an ordinary checkout.
 - Choose the smallest concrete design that solves the problem. A new abstraction,
   dependency, setting, or menu item needs a use case beyond symmetry.
 - Document types and nontrivial functions by purpose. Update comments and guides when
