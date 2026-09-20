@@ -4,9 +4,9 @@ import AppKit
 /// blank tab, and a dismissible overlay on a loaded one (⌘L). Typing completes inline from history;
 /// ↑/↓ pick a row, Tab accepts the completion, Return navigates, Esc or a click outside dismisses.
 ///
-/// Motion follows one rule: things that appear, leave or move are animated, briefly and interruptibly;
-/// the text being typed never is. The field rises in and lifts away, the list resizes, and suggestions
-/// that survive a keystroke stay put while the others crossfade around them.
+/// Nothing here is animated: the field and its list appear, change and leave at once, so what is
+/// typed and what it matches are never a moment behind each other. Suggestions that survive a
+/// keystroke keep their row view, so they hold still while the list changes around them.
 final class Omnibox: NSView, NSTextFieldDelegate {
     var onNavigate: ((URL) -> Void)?
     var onDismiss: (() -> Void)?
@@ -16,13 +16,9 @@ final class Omnibox: NSView, NSTextFieldDelegate {
     private let field = NSTextField()
     private let searchHint = SearchHint()
     private let listBox = CardView()
-    /// Clips rows to the list's rounded shape while its height animates; the card itself can't clip
-    /// without losing its shadow. Flipped, so the first row is the top one and ↓ moves down the list.
+    /// Clips rows to the list's rounded shape; the card itself can't clip without losing its shadow. Flipped, so the first row is the top one and ↓ moves down the list.
     private let rowsClip = RowsClip()
     private var rows: [SuggestionRow] = []
-    /// Vertical offset of field and list from their resting place, used to rise in and lift away.
-    private var lift: CGFloat = 0
-
     private var isOverPage = false
     /// What the user typed, without the inline completion or a row's address filled in over it.
     private var typed = ""
@@ -46,7 +42,7 @@ final class Omnibox: NSView, NSTextFieldDelegate {
         searchHint.textColor = .tertiaryLabelColor
         searchHint.isHidden = true
         [field, searchHint].forEach(fieldBox.addSubview)
-        listBox.alphaValue = 0
+        listBox.isHidden = true
         rowsClip.wantsLayer = true
         rowsClip.layer?.cornerRadius = 12
         rowsClip.layer?.cornerCurve = .continuous
@@ -65,12 +61,9 @@ final class Omnibox: NSView, NSTextFieldDelegate {
         layer?.backgroundColor = isOverPage ? nil : NSColor.textBackgroundColor.cgColor
     }
 
-    /// Shows the field with `text` selected and takes keyboard focus. In an already visible window the
-    /// field fades in while rising into place; at app startup it is present in the first frame. `overPage`
-    /// makes the backdrop transparent and dismissible; otherwise it is the opaque blank-tab page. When
-    /// the field is already up, as when opening one new tab after another, it stays where it is.
+    /// Shows the field with `text` selected and takes keyboard focus. `overPage` makes the backdrop
+    /// transparent and dismissible; otherwise it is the opaque blank-tab page.
     func present(text: String, overPage: Bool) {
-        let wasShowing = !isHidden && alphaValue == 1 && lift == 0
         isOverPage = overPage
         needsDisplay = true
         field.stringValue = text
@@ -78,22 +71,8 @@ final class Omnibox: NSView, NSTextFieldDelegate {
         typed = text
         entries = text.isEmpty ? [] : History.shared.suggestions(for: text)
         onTextChange?(typed)
-        rebuildRows()
         isHidden = false
-        alphaValue = 1
-
-        if !wasShowing, window?.isVisible == true {
-            lift = 8
-            arrange(animated: false)
-            fieldBox.alphaValue = 0
-            lift = 0
-            arrange(animated: true)
-            animate(0.2) { self.fieldBox.animator().alphaValue = 1 }
-        } else if !wasShowing {
-            lift = 0
-            fieldBox.alphaValue = 1
-            arrange(animated: false)
-        }
+        rebuildRows()
 
         window?.makeFirstResponder(field)
         // The inline completion is a selection; neutral gray keeps it from reading as an error or a link.
@@ -101,60 +80,31 @@ final class Omnibox: NSView, NSTextFieldDelegate {
             [.backgroundColor: NSColor.labelColor.withAlphaComponent(0.12)]
     }
 
-    /// Lifts away while fading out, then hides, unless it was presented again in the meantime.
     func dismiss() {
-        guard !isHidden else { return }
-        lift = -8
-        arrange(animated: true)
-        animate(0.16) {
-            self.animator().alphaValue = 0
-        } completion: {
-            if self.alphaValue == 0 { self.isHidden = true }
-        }
+        isHidden = true
     }
 
     override func layout() {
         super.layout()
-        arrange(animated: false)
+        arrange()
     }
 
     /// Places the field at the window's center, nudged up while suggestions show, with the list below it.
-    private func arrange(animated: Bool) {
+    private func arrange() {
         let width = min(478, bounds.width - 40)
         let x = ((bounds.width - width) / 2).rounded()
         // Centered on the window rather than the content area, which starts below the tab strip.
         let windowCenter = superview.map { convert(NSPoint(x: 0, y: $0.bounds.midY), from: $0).y } ?? bounds.midY
-        let y = (windowCenter - 21 - (rows.isEmpty ? 0 : 16) + lift).rounded()
-        let fieldFrame = NSRect(x: x, y: y, width: width, height: 42)
-        let listFrame = NSRect(x: x, y: y + 50, width: width, height: CGFloat(rows.count) * 29 + 9)
-        let clipFrame = NSRect(origin: .zero, size: listFrame.size)
-        var frames: [(NSView, NSRect)] = [(fieldBox, fieldFrame), (listBox, listFrame), (rowsClip, clipFrame)]
-
+        let y = (windowCenter - 21 - (rows.isEmpty ? 0 : 16)).rounded()
+        fieldBox.frame = NSRect(x: x, y: y, width: width, height: 42)
+        listBox.frame = NSRect(x: x, y: y + 50, width: width, height: CGFloat(rows.count) * 29 + 9)
+        listBox.isHidden = rows.isEmpty
+        rowsClip.frame = NSRect(origin: .zero, size: listBox.frame.size)
         field.frame = NSRect(x: 16, y: 12, width: width - 32, height: 18)
         placeSearchHint()
         for (index, row) in rows.enumerated() {
-            let frame = NSRect(x: 5.5, y: 4.5 + CGFloat(index) * 29, width: width - 11, height: 29)
-            // A new row starts in its place; only rows that were already showing slide.
-            if row.frame.isEmpty { row.frame = frame } else { frames.append((row, frame)) }
+            row.frame = NSRect(x: 5.5, y: 4.5 + CGFloat(index) * 29, width: width - 11, height: 29)
         }
-        if animated {
-            animate(0.2) {
-                for (view, frame) in frames where view.frame != frame { view.animator().frame = frame }
-                self.listBox.animator().alphaValue = self.rows.isEmpty ? 0 : 1
-            }
-        } else {
-            for (view, frame) in frames where view.frame != frame { view.frame = frame }
-            listBox.alphaValue = rows.isEmpty ? 0 : 1
-        }
-    }
-
-    private func animate(_ duration: TimeInterval, _ changes: () -> Void, completion: (() -> Void)? = nil) {
-        NSAnimationContext.runAnimationGroup(
-            { context in
-                context.duration = duration
-                context.timingFunction = CAMediaTimingFunction(controlPoints: 0.2, 0.9, 0.3, 1)
-                changes()
-            }, completionHandler: completion)
     }
 
     override func mouseDown(with event: NSEvent) {
@@ -222,8 +172,7 @@ final class Omnibox: NSView, NSTextFieldDelegate {
     private func activate(row index: Int) { onNavigate?(entries[index].url) }
 
     /// Brings the rows in line with history. The field itself owns typed text and its inline completion,
-    /// so rows only show distinct destinations. Surviving rows hold still or slide to their new place;
-    /// new ones fade in and dropped ones fade out.
+    /// so rows only show distinct destinations. A destination that is still offered keeps its row view.
     private func rebuildRows(select: Int? = nil) {
         // With favicons on, every row has an icon so the titles line up: the site's, or a plain globe.
         let showsIcons = Settings.showsFavicons
@@ -236,39 +185,23 @@ final class Omnibox: NSView, NSTextFieldDelegate {
         }
 
         let existing = Dictionary(rows.map { ($0.key, $0) }, uniquingKeysWith: { first, _ in first })
-        var entering: [SuggestionRow] = []
         let updated = items.map { item -> SuggestionRow in
             if let row = existing[item.key] {
                 row.update(primary: item.primary, secondary: item.secondary, icon: item.icon)
                 return row
             }
             let row = SuggestionRow(key: item.key, primary: item.primary, secondary: item.secondary, icon: item.icon)
-            row.alphaValue = 0
             rowsClip.addSubview(row)
-            entering.append(row)
             return row
         }
-        let leaving = rows.filter { row in !updated.contains { $0 === row } }
+        rows.filter { row in !updated.contains { $0 === row } }.forEach { $0.removeFromSuperview() }
         rows = updated
         for (index, row) in rows.enumerated() {
             row.onClick = { [weak self] in self?.activate(row: index) }
         }
         selected = select
         updateSearchHint()
-
-        let animated = !isHidden
-        arrange(animated: animated)
-        guard animated else {
-            entering.forEach { $0.alphaValue = 1 }
-            leaving.forEach { $0.removeFromSuperview() }
-            return
-        }
-        animate(0.16) {
-            entering.forEach { $0.animator().alphaValue = 1 }
-            leaving.forEach { $0.animator().alphaValue = 0 }
-        } completion: {
-            leaving.forEach { $0.removeFromSuperview() }
-        }
+        arrange()
     }
 
     /// Shows the search provider after a query without adding a duplicate suggestion row.
@@ -339,7 +272,6 @@ private final class SuggestionRow: NSView {
         super.init(frame: .zero)
         setIcon(icon)
         addSubview(iconView)
-        self.primary.wantsLayer = true
         self.primary.font = .systemFont(ofSize: 13)
         self.primary.textColor = .secondaryLabelColor
         self.secondary.font = .systemFont(ofSize: 13)
@@ -373,10 +305,6 @@ private final class SuggestionRow: NSView {
     }
 
     private func updateEmphasis() {
-        let fade = CATransition()
-        fade.type = .fade
-        fade.duration = 0.12
-        primary.layer?.add(fade, forKey: "emphasis")
         primary.textColor = isSelected || isHovered ? .labelColor : .secondaryLabelColor
     }
 

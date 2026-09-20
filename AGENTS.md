@@ -111,7 +111,8 @@ better way to meet one of them is welcome; change the code and its comments, not
 - The window is the system's: a toolbar window with the system's corners, titlebar height and
   traffic lights, drawn larger but never replaced.
 - Motion marks things that appear, leave or move, is brief and can be interrupted. Typed text is
-  never animated. A reload should look as if nothing moved.
+  never animated, and neither is the address field: it and its suggestions appear and change at
+  once. A reload should look as if nothing moved.
 - Aero has no Swift package dependencies, and `Scripts/guard.py` enforces it.
 - The product name lives in `x` and the bundle. Do not hardcode it in sources.
 
