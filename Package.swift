@@ -8,7 +8,9 @@ let package = Package(
         .executableTarget(
             name: "Browser",
             path: "Sources",
-            resources: [.copy("Extensions/Extensions.html"), .copy("Settings/Settings.html")],
+            resources: [
+                .copy("Extensions/Extensions.html"), .copy("Settings/Settings.html"), .copy("Page/EdgeProbe.js"),
+            ],
             swiftSettings: [.swiftLanguageMode(.v5)]),
         .testTarget(
             name: "BrowserTests",
