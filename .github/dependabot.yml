@@ -5,8 +5,20 @@ updates:
     directory: /Website
     schedule:
       interval: weekly
+    # One pull request a week rather than one per package.
+    groups:
+      website:
+        patterns: ["*"]
+    ignore:
+      # @astrojs/check accepts TypeScript ^5 || ^6 and typescript-eslint <6.1.0. Remove this once
+      # both accept 7, or installing would fail on their peer ranges.
+      - dependency-name: typescript
+        versions: [">=7"]
   - package-ecosystem: github-actions
     labels: []
     directory: /
     schedule:
       interval: weekly
+    groups:
+      actions:
+        patterns: ["*"]

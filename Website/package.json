@@ -19,17 +19,17 @@
   },
   "dependencies": {
     "@fontsource-variable/montserrat": "^5",
-    "astro": "7.3.2"
+    "astro": "7.3.3"
   },
   "devDependencies": {
     "@astrojs/check": "^0.9",
     "@eslint/js": "^10",
     "eslint": "^10",
     "eslint-plugin-astro": "^3",
-    "prettier": "3.9.6",
+    "prettier": "3.9.8",
     "prettier-plugin-astro": "^1.0",
-    "typescript": "^5",
+    "typescript": "^6.0.3",
     "typescript-eslint": "^8",
-    "wrangler": "4.132.0"
+    "wrangler": "4.135.0"
   }
 }
