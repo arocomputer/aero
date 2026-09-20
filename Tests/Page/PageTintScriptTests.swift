@@ -99,6 +99,35 @@ private let togglesSolidOnScroll =
     #expect(await bleed.settles { $0 == "40,44,52" })
 }
 
+@MainActor @Test func clearNavFloatingOverCardsDoesNotMakeThemCount() async {
+    // A clear fixed nav whose inner container is narrower than the card beneath it, over a flat card
+    // set in from the sides; white pills inside the card pass under the nav as the page scrolls.
+    let page = TintedPage(
+        """
+        <style>body{background:#fff} header{height:64px} header div{margin:0 auto;width:700px;height:64px}
+        .card{margin:16px 16px 0;height:2600px;border-radius:28px 28px 0 0;background:rgb(245,245,245)}
+        .pills{padding:300px 60px 0;display:flex;gap:8px} .pills b{flex:1;height:40px;background:#fff}</style>
+        <header><div></div></header><div class=card><div class=pills><b></b><b></b><b></b></div></div>
+        """)
+    #expect(await page.settles { $0 == "255,255,255" || $0 == "page" })
+    for y in [40, 320, 360] {
+        await page.run("scrollTo(0, \(y))")
+        try? await Task.sleep(for: .milliseconds(700))
+    }
+    // The card never took the strip, with pills under the nav or without: no flicker.
+    #expect(page.reports.allSatisfy { $0 == "255,255,255" || $0 == "page" })
+}
+
+@MainActor @Test func columnWithAPinnedLayerInsideItCounts() async {
+    let page = TintedPage(
+        """
+        <style>.side{position:absolute;left:0;top:0;width:300px;height:3000px;background:rgb(20,30,40)}
+        .side div{position:sticky;top:0;height:700px}</style>
+        <div class=side><div></div></div><main></main>
+        """)
+    #expect(await page.settles { $0 == "20,30,40" })
+}
+
 @MainActor @Test func headerInsideAWebComponentIsRead() async {
     let page = TintedPage(
         """

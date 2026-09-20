@@ -208,7 +208,9 @@
 
     // What shows at one point of the top edge: the answer, the element that owns it, and whether
     // it stays put. Sites often color a plain column and pin a transparent layer inside it, so the
-    // owner also counts as pinned when something visible, pinned and no wider sits in front of it.
+    // owner also counts as pinned when something visible, pinned and no wider sits in front of it
+    // and within it. Within matters: a clear header floating over the page is in front of every card
+    // that scrolls beneath it, and would otherwise make each of them count as pinned in turn.
     // `glass` is how opaque a header that blurs its backdrop is by its own tint; see `paint`.
     function at(x) {
         let r = 0, g = 0, b = 0, a = 0, owner = null, glass = null;
@@ -219,7 +221,7 @@
             // a rounded card holding a hero, leaves the page's own background showing beside it and
             // above its corners, and a strip in the card's color would sit on the page like a lid.
             const isBand = box.left <= 4 && box.right >= document.documentElement.clientWidth - 4;
-            const stays = isPinned(own) || front.some(e => isPinned(e) && e.getBoundingClientRect().width <= width + 2);
+            const stays = isPinned(own) || front.some(e => isPinned(e) && own.contains(e) && e.getBoundingClientRect().width <= width + 2);
             return { answer, width, stays, isPainted, isBand };
         };
         // Adds one layer, `pseudo` naming the pseudo-element when it is one. Returns the result when
