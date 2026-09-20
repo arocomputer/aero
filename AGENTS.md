@@ -34,7 +34,7 @@ tab and on Command-L. The repository is `arocomputer/aero`. The Swift module is
 
 Aero needs macOS 15.4 or newer and a Swift 6 toolchain. The Command Line Tools are enough;
 Xcode is not required. Python 3 runs repository tooling. The website needs Node.js 22 or
-newer and `npm ci` from `Websites/`. CI runs the same checks.
+newer and `npm ci` from `Website/`. CI runs the same checks.
 
 `./x quality` runs `./x lint` and `./x guard`. `./x lint` checks formatting with
 `swift format` in strict mode and builds with warnings as errors. `./x fmt` formats in
@@ -43,11 +43,11 @@ place. `./x test` runs the unit tests. `./x app` builds the release bundle, fill
 the static site.
 
 Required checks are `Validate` from Quality and `Build and Test` from App. `Website
-Check` runs when `Websites/`, its workflow, or `x` changes. Keep those names aligned
+Check` runs when `Website/`, its workflow, or `x` changes. Keep those names aligned
 with repository rules.
 
-The icon is `Sources/UI/app.icon`, an Icon Composer document. That format is a
-folder holding `icon.json` and its artwork; Finder shows it as one file. With Xcode installed, `scripts/icon.sh`
+The icon is `Assets/app.icon`, an Icon Composer document. That format is a
+folder holding `icon.json` and its artwork; Finder shows it as one file. With Xcode installed, `Scripts/icon.sh`
 compiles it with `actool` into `Assets.car`, and macOS renders the Default, Dark, Clear and Tinted looks.
 Without Xcode it renders a plain `.icns` of the Default look with Icon Composer's `ictool`.
 The `actool` path is covered by `./x app` on a Mac with Xcode installed.
@@ -58,24 +58,28 @@ The `actool` path is covered by `./x app` on a Mac with Xcode installed.
 Package.swift                   one executable target, Browser, and its tests
 Info.plist                      bundle template; ./x app fills __NAME__ and __BUNDLE_ID__
 x                               contributor and CI commands; also holds the product name
-Sources/Core/                   entry point, menus, app paths, addresses and history
-Sources/Downloads/              WebKit downloads, destinations and current-session state
-Sources/Extensions/             catalog, installed WebExtensions, permissions, actions and popups
-Sources/UI/                     windows, tab strip, address field and app icon
-  app.icon/                     Icon Composer source for the app icon; excluded from the target
-Sources/Website/                web views, page-edge color sampling, pins and reload hold
+Sources/                        the app, one folder per feature
+  App/                          entry point, main menu, app paths, passkeys
+  Window/                       the browser window and its controller, the browser menu, find
+  Strip/                        the tab strip and its items
+  Omnibox/                      the address field, address parsing, history
+  Page/                         a tab and its page: top-edge color, site icons, reload hold
+  Settings/                     preferences and the settings page
+  Downloads/                    WebKit downloads, destinations and current-session state
+  Extensions/                   catalog, installed WebExtensions, permissions, actions and popups
 Tests/                          focused unit tests, grouped like the source tree
-Websites/                       aerobrowser.app source, checks, and deployment
-scripts/                        guard, commit hooks and their tests, icon packaging
+Assets/                         the app icon's Icon Composer source, logo and wordmark
+Website/                       aerobrowser.app source, checks, and deployment
+Scripts/                        guard, commit hooks and their tests, icon packaging
 ```
 
 ## Fast test loops
 
 ```sh
-./x test --filter PageEdge
+./x test --filter PageTint
 ./x test --filter History
 ./x test --filter AddressInput
-python3 -m unittest discover -s scripts/hooks -p 'test_*.py'
+python3 -m unittest discover -s Scripts/hooks -p 'test_*.py'
 ```
 
 Tests should pin observable behavior. A regression test must fail against the unfixed
@@ -86,55 +90,47 @@ the app and capturing its window, and say so in the PR.
 Do not send synthetic keyboard or pointer input to a desktop someone is using, and do
 not raise test windows over their work without asking.
 
-## App boundaries
+## What Aero is
 
-- The engine is the system's WebKit. How fast a page renders and scrolls is WebKit's
-  doing. Before blaming Aero for a slow page, compare Safari and a bare `WKWebView` in a
-  plain window on the same Mac. If those are slow too, no change here will fix it.
-- Aero runs one script inside pages, the top-edge probe in `Sources/Website/PageEdge.swift`. Anything that
-  runs inside a page or makes it paint costs the page. The probe runs on load, resize and
-  scroll, at most ten times a second, and never listens to animations. A pixel snapshot
-  freezes the page while it paints, up to half a second on a page full of canvases, so
-  each painted element gets one per page, after loading, while nothing scrolls. Change
-  these limits only with measurements.
-- Aero has no Swift package dependencies, and `scripts/guard.py` enforces it. It uses no private
-  WebKit API today. Adding either needs a stated reason, evidence that it helps, and for
-  private API a run-time lookup that does nothing when the method is gone.
-- The strip has no surface of its own. It takes its color from what touches the page's
-  top edge, but only from two kinds of element. A pinned one, fixed or sticky, such as a
-  sticky header or an app's sidebar, comes first. A band spanning nearly the full width,
-  such as a hero, comes second. Cards and columns scrolling past never count, or the
-  strip would flicker on every feed; without either kind it shows the page's background.
-  It switches its appearance to light or dark to stay legible. It never uses a page's
-  declared theme color, which sites often set to a brand color that matches nothing
-  under the strip.
-- Reload goes through `ReloadHold`. Sites restore their own scroll position after a
-  reload and shift their layout for a second afterwards, so a plain reload shows the top,
-  jumps back and nudges the text, in every browser. The hold covers the page with a still
-  picture, waits for the new page to settle, lines it up with an anchor element noted
-  beforehand, uncovers, and keeps the anchor in place for 2.5s more. The strip keeps the
-  color it had when the picture was taken for as long as the hold lasts. Its one snapshot
-  is taken before the reload, when a pause costs nothing. Measure before changing its
-  timings: log an element's viewport position through a reload, with and without it.
-- The window is a system toolbar window. Its corners and titlebar height are the
-  system's. The traffic lights are the system's buttons drawn larger; do not replace
-  them with custom drawing.
-- Motion marks things that appear, leave or move, stays under 200ms and can be
-  interrupted. Typed text is never animated.
-- History is one local SQLite table, written on the main thread with a write-ahead log.
-  Nothing leaves the Mac. Search result pages are not recorded.
-- Website accounts use one persistent WebKit data store. Aero has no browser profiles or
-  separate identity layer.
+These say what Aero is for. They are intent, not mechanism: how each one is met lives in the doc
+comments beside the code, which is also where the numbers, timings and trade-offs are kept. A
+better way to meet one of them is welcome; change the code and its comments, not this list.
+
+- The strip is one with the page. It has no surface of its own: it takes the color the page shows
+  along its top, and changes the way the page changes, fading when the header fades, so that window
+  and page read as one object. It stays legible by switching its own appearance to light or dark.
+  It follows what stays put, a header, a sidebar, a hero, never the cards and columns scrolling
+  past, and never a page's declared theme color.
+- The chrome must not cost the page. Whatever runs inside a page or makes it paint is paid for by
+  the person scrolling it, so it is rare, cheap and out of the page's reach. Claim a cost or a
+  saving only with a measurement, and say how it was taken.
+- The engine is the system's WebKit. How fast a page renders is WebKit's doing: before blaming
+  Aero for a slow page, compare Safari and a bare `WKWebView` on the same Mac.
+- Memory is given back. A tab nobody is looking at should not hold what a page costs, and giving
+  it up must not lose anything the person would miss.
+- Nothing leaves the Mac. History and site icons are local files, search result pages are not
+  recorded, and clearing history clears everything that names a visited site. Website accounts
+  use one persistent WebKit data store; there are no profiles.
+- The window is the system's: a toolbar window with the system's corners, titlebar height and
+  traffic lights, drawn larger but never replaced.
+- Motion marks things that appear, leave or move, is brief and can be interrupted. Typed text is
+  never animated. A reload should look as if nothing moved.
+- Aero has no Swift package dependencies, and `Scripts/guard.py` enforces it.
 - The product name lives in `x` and the bundle. Do not hardcode it in sources.
 
 ## Naming and documentation
 
-Prefer short names such as `Tab`, `History` and `PageEdge`. Let the file and type give
+Prefer short names such as `Tab`, `History` and `PageTint`. Let the file and type give
 context instead of suffixes such as Manager or Provider. Keep conventional Swift naming
 and the standard SwiftPM layout under `Sources/` and `Tests/`.
 
 The README introduces the app, its keys and its layout. Repository policy stays in root
 markdown files. Do not create a docs folder or duplicate guides.
+
+This file states intent and how to work here. Mechanisms, numbers and the reasons behind them
+live in doc comments beside the code they describe, where a change to one changes the other.
+When guidance becomes wrong, rewrite it rather than appending another account. Git history
+keeps past decisions.
 
 ## Branches and review
 
@@ -161,7 +157,7 @@ markdown files. Do not create a docs folder or duplicate guides.
 are pinned to full commit SHAs and workflows use minimal permissions. Never execute
 contributor code with a privileged PR token.
 
-`scripts/guard.py` checks action pins and that `Package.swift` declares no dependencies.
+`Scripts/guard.py` checks action pins and that `Package.swift` declares no dependencies.
 A legitimate boundary change updates the guard with an explanation; do not bypass it.
-The website deploys separately from app releases. There is no app release automation yet.
+The website deploys separately from app releases.
 See CONTRIBUTING.md before preparing a release.

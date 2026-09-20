@@ -3,7 +3,7 @@ build/
 .swiftpm/
 __pycache__/
 .DS_Store
-Websites/.astro/
-Websites/.wrangler/
-Websites/dist/
-Websites/node_modules/
+Website/.astro/
+Website/.wrangler/
+Website/dist/
+Website/node_modules/

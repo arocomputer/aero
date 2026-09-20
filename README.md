@@ -15,7 +15,10 @@ WebKit, with no package dependencies. The executable is under 1 MB.
   history, and Command-L brings the same field up over a page.
 - The strip takes the color of the page's header, hero or sidebar, so it reads as part of the page.
 - The active tab doubles as the loading bar.
-- Pinned tabs show as monograms, can't be closed, and come back on the next launch.
+- Tabs and address suggestions show each site's icon; Settings can turn that off.
+- Pinned tabs show as their site's icon or a monogram, can't be closed, and come back on the next launch.
+- Tabs you haven't looked at for half an hour give their memory back and reload where you left
+  them when you return.
 - Downloads go to the Downloads folder and appear at the right edge of the strip.
 - The built-in extensions catalog installs signed app extensions such as 1Password, and local
   WebExtensions can be installed from an unpacked directory or ZIP.
@@ -23,12 +26,10 @@ WebKit, with no package dependencies. The executable is under 1 MB.
 - Reload keeps your place. The page stays still and the strip keeps its color while the new
   copy loads, then the two are lined up before you see it.
 
-Aero is early in development.
-
 ## Build
 
 Aero needs macOS 15.4 or newer and a Swift 6 toolchain. The Command Line Tools are enough;
-Xcode is not required. The website under `Websites/` needs Node.js 22 or newer.
+Xcode is not required. The website under `Website/` needs Node.js 22 or newer.
 
 ```sh
 ./x run      # build build/Aero.app and open it
@@ -37,7 +38,7 @@ Xcode is not required. The website under `Websites/` needs Node.js 22 or newer.
 
 The product name lives in one place, `NAME` in `x`.
 
-The app icon is `Sources/UI/app.icon`, an Icon Composer document. With Xcode installed the build
+The app icon is `Assets/app.icon`, an Icon Composer document. With Xcode installed the build
 compiles it with `actool`, and macOS renders its Default, Dark, Clear and Tinted looks.
 Without Xcode it falls back to a plain `.icns` of the Default look, rendered by Icon
 Composer.

@@ -3,12 +3,12 @@ on:
   push:
     branches: [main]
     paths:
-      - Websites/**
+      - Website/**
       - .github/workflows/website.yml
       - x
   pull_request:
     paths:
-      - Websites/**
+      - Website/**
       - .github/workflows/website.yml
       - x
   workflow_dispatch:
@@ -24,7 +24,7 @@ jobs:
     timeout-minutes: 10
     defaults:
       run:
-        working-directory: Websites
+        working-directory: Website
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
@@ -33,7 +33,7 @@ jobs:
         with:
           node-version: 22
           cache: npm
-          cache-dependency-path: Websites/package-lock.json
+          cache-dependency-path: Website/package-lock.json
       - run: npm ci
       - run: npm run check
 
@@ -48,7 +48,7 @@ jobs:
       url: https://aerobrowser.app
     defaults:
       run:
-        working-directory: Websites
+        working-directory: Website
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
@@ -57,7 +57,7 @@ jobs:
         with:
           node-version: 22
           cache: npm
-          cache-dependency-path: Websites/package-lock.json
+          cache-dependency-path: Website/package-lock.json
       - run: npm ci
       - name: Deploy aerobrowser.app
         env:
