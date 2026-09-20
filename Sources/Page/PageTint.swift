@@ -69,8 +69,7 @@ final class PageTint {
     var isWaiting: Bool { kept != nil }
 
     /// `snapshot` supplies the dominant color along the top edge, or nil if it could not be read.
-    /// `isShown` is whether a snapshot can and should be taken now: a hidden page can't be
-    /// snapshotted, and the tab also says no while WebKit itself names the color.
+    /// `isShown` is whether the page is on screen; a hidden page can't be snapshotted.
     init(
         delay: TimeInterval = 0.5, isLoading: @escaping () -> Bool, isShown: @escaping () -> Bool,
         snapshot: @escaping (@escaping (NSColor?) -> Void) -> Void, onChange: @escaping () -> Void
@@ -78,8 +77,11 @@ final class PageTint {
         (self.delay, self.isLoading, self.isShown, self.snapshot, self.onChange) = (delay, isLoading, isShown, snapshot, onChange)
     }
 
-    /// Takes one report from the page.
+    /// Takes one report from the page. A first report that leaves `color` as it was still ends the
+    /// wait, which changes what the tab shows, so it is announced like a change of color.
     func report(_ full: String) {
+        let (wasWaiting, before) = (kept != nil, color)
+        defer { if wasWaiting, color == before { onChange() } }
         kept?.cancel()
         kept = nil
         // "<answer>~<ms>,<easing>" when the header is fading to this answer.

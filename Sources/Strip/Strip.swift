@@ -96,6 +96,8 @@ final class Strip: NSView {
         guard let fading else {
             CATransaction.begin()
             CATransaction.setDisableActions(true)
+            // A fade still running would carry on toward the new color at its own pace.
+            layer?.removeAnimation(forKey: "backgroundColor")
             layer?.backgroundColor = color?.cgColor
             CATransaction.commit()
             return

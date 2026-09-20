@@ -6,12 +6,13 @@ import Testing
 @MainActor private final class Fixture {
     let painted = NSColor(srgbRed: 0, green: 0, blue: 0.25, alpha: 1)
     var snapshots = 0
+    var changes = 0
     var isLoading = false
     private(set) lazy var tint = PageTint(
         delay: 0.03, isLoading: { [unowned self] in isLoading }, isShown: { true },
         snapshot: { [unowned self] done in
             snapshots += 1; done(painted)
-        }, onChange: {})
+        }, onChange: { [unowned self] in changes += 1 })
 
     func wait(_ seconds: Double = 0.15) async { try? await Task.sleep(for: .seconds(seconds)) }
 }
@@ -89,6 +90,15 @@ import Testing
     fixture.tint.reset(holding: 0.03)
     await fixture.wait()
     #expect(!fixture.tint.isWaiting && fixture.tint.color == nil)
+}
+
+@MainActor @Test func aFirstReportThatKeepsTheColorStillEndsTheWait() {
+    let fixture = Fixture()
+    fixture.tint.report("page")
+    fixture.tint.reset(holding: 2)
+    let before = fixture.changes
+    fixture.tint.report("page")
+    #expect(!fixture.tint.isWaiting && fixture.changes == before + 1)
 }
 
 @MainActor @Test func aFadingHeaderReportsTheFadeItMakes() {

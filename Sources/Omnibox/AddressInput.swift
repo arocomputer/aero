@@ -20,6 +20,11 @@ enum AddressInput {
         return searchURL(for: text)
     }
 
+    /// Whether the address is a page on the web, as opposed to one of the app's own, a file or a blank.
+    static func isWeb(_ url: URL?) -> Bool {
+        ["http", "https"].contains(url?.scheme?.lowercased() ?? "")
+    }
+
     static func searchURL(for query: String) -> URL {
         Settings.searchEngine.url(for: query)
     }

@@ -4,7 +4,7 @@ import WebKit
 
 /// One browser tab. Owns its web view, records visits to history, and tells its window controller
 /// whenever title, URL or loading state change. A tab is "blank" until its first navigation.
-/// Its `tint` follows what the page shows along its top pageTint.
+/// Its `tint` follows what the page shows along its top edge.
 /// A pinned tab shows as its site's icon or a monogram in the strip, can't be closed, and comes back
 /// on the next launch.
 /// A tab nobody has looked at for `sleepAfter` goes to sleep: it gives up its page, and with it the
@@ -35,6 +35,8 @@ final class Tab: NSObject, WKNavigationDelegate, WKUIDelegate, WKWebExtensionTab
     private var asleep: (title: String, url: URL, state: Any?)?
     /// A page opened by another page's script stays awake: its opener may be waiting to hear from it.
     private let isScriptOpened: Bool
+    /// So does a page that opened one, such as a sign-in window that reports back to it.
+    private var hasOpenedTab = false
     var isAsleep: Bool { asleep != nil }
     /// The page's address, also while it sleeps.
     var url: URL? { asleep?.url ?? webView.url }
@@ -137,8 +139,7 @@ final class Tab: NSObject, WKNavigationDelegate, WKUIDelegate, WKWebExtensionTab
     /// Shows the icon remembered for the address's host. Pages on one host can have icons of their
     /// own, so moving within a host keeps the current icon until the new page declares its own.
     private func showRememberedFavicon(for url: URL?) {
-        let isWeb = ["http", "https"].contains(url?.scheme?.lowercased() ?? "")
-        let host = Settings.showsFavicons && isWeb ? url?.host?.lowercased() : nil
+        let host = Settings.showsFavicons && AddressInput.isWeb(url) ? url?.host?.lowercased() : nil
         guard host != faviconHost else { return }
         faviconHost = host
         favicon = host == nil ? nil : Favicons.shared.icon(for: url)
@@ -146,8 +147,7 @@ final class Tab: NSObject, WKNavigationDelegate, WKUIDelegate, WKWebExtensionTab
 
     /// Asks the loaded page which icons it declares and shows the best one once it is fetched.
     private func loadFavicon() {
-        guard Settings.showsFavicons, let page = webView.url, ["http", "https"].contains(page.scheme?.lowercased() ?? "")
-        else { return }
+        guard Settings.showsFavicons, let page = webView.url, AddressInput.isWeb(page) else { return }
         webView.callAsyncJavaScript(Favicons.declaredScript, arguments: [:], in: nil, in: .defaultClient) { [weak self] result in
             let declared = Favicons.declared(from: try? result.get())
             Task { @MainActor in
@@ -171,23 +171,34 @@ final class Tab: NSObject, WKNavigationDelegate, WKUIDelegate, WKWebExtensionTab
         }
     }
 
-    /// Whether any text field holds something the user typed, or an editor has the focus.
+    /// Notes, from the start of each page, that the user typed in a rich editor. What such an editor
+    /// holds cannot be told from a draft by looking later, and it is not restored on waking.
+    private static let noteEditing = """
+        addEventListener('input', event => {
+            if (event.target && event.target.isContentEditable) globalThis.aeroTypedInEditor = true;
+        }, { capture: true, passive: true });
+        """
+
+    /// Whether the page may hold something the user typed: a text field changed from its default, or
+    /// a rich editor typed in at any point of this visit, focused or not. Erring this way keeps some
+    /// tabs awake that could have slept; erring the other way loses a draft.
     private static let hasEdits = """
         return [...document.querySelectorAll('input, textarea')].some(field =>
                 field.type !== 'hidden' && typeof field.defaultValue === 'string' && field.value !== field.defaultValue)
             || document.activeElement?.isContentEditable === true
+            || globalThis.aeroTypedInEditor === true
         """
 
     /// What rules sleeping out without asking the page: a tab that shows, was hidden only recently, is
-    /// pinned, blank, waiting, loading, signing in, opened by a script, in full screen, capturing the
-    /// camera or microphone, outside the shared session, or not a web page.
+    /// pinned, blank, waiting, loading, signing in, opened by a script or the opener of a tab, in full
+    /// screen, capturing the camera or microphone, outside the shared session, or not a web page.
     private func maySleep(hiddenFor minimum: TimeInterval) -> Bool {
-        guard asleep == nil, !isPinned, !isScriptOpened, !isBlank, pendingURL == nil, reloadHold == nil, authenticationRequest == nil,
+        guard asleep == nil, !isPinned, !isScriptOpened, !hasOpenedTab, !isBlank, pendingURL == nil, reloadHold == nil,
+            authenticationRequest == nil,
             webView.superview == nil, let hiddenSince, Date().timeIntervalSince(hiddenSince) >= minimum,
             !webView.isLoading, webView.fullscreenState == .notInFullscreen,
             webView.cameraCaptureState == .none, webView.microphoneCaptureState == .none,
-            webView.configuration.websiteDataStore.isPersistent,
-            ["http", "https"].contains(webView.url?.scheme?.lowercased() ?? "")
+            webView.configuration.websiteDataStore.isPersistent, AddressInput.isWeb(webView.url)
         else { return false }
         return true
     }
@@ -242,7 +253,7 @@ final class Tab: NSObject, WKNavigationDelegate, WKUIDelegate, WKWebExtensionTab
         let release = { [weak self] in
             guard let self else { return }
             reloadHold = nil
-            owner?.tabTintDidChange(self)
+            owner?.tabDidChange(self)
         }
         ReloadHold.begin(in: webView, tint: tint, onEnd: release) { [weak self] hold in
             self?.reloadHold = hold
@@ -308,6 +319,8 @@ final class Tab: NSObject, WKNavigationDelegate, WKUIDelegate, WKWebExtensionTab
         configuration.applicationNameForUserAgent = "Version/\(system >= 26 ? system : system + 3).0 Safari/605.1.15"
         configuration.preferences.isElementFullscreenEnabled = true
         TintRouter.install(in: configuration.userContentController)
+        configuration.userContentController.addUserScript(
+            WKUserScript(source: noteEditing, injectionTime: .atDocumentStart, forMainFrameOnly: true, in: .defaultClient))
         return configuration
     }
 
@@ -461,7 +474,8 @@ final class Tab: NSObject, WKNavigationDelegate, WKUIDelegate, WKWebExtensionTab
         _ webView: WKWebView, createWebViewWith configuration: WKWebViewConfiguration,
         for action: WKNavigationAction, windowFeatures: WKWindowFeatures
     ) -> WKWebView? {
-        owner?.openTab(configuration: configuration).webView
+        hasOpenedTab = true
+        return owner?.openTab(configuration: configuration).webView
     }
 
     func webViewDidClose(_ webView: WKWebView) {

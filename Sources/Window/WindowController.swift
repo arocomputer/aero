@@ -174,18 +174,20 @@ final class WindowController: NSWindowController, NSWindowDelegate, WKWebExtensi
     }
 
     /// Called by tabs when only their top edge changed, which happens continuously while scrolling.
+    /// Only this change is the page's own, so only it is made with the page's fade.
     func tabTintDidChange(_ tab: Tab) {
-        if tab === active { applyTint(of: tab) }
+        if tab === active { applyTint(of: tab, fading: tab.tintFade) }
     }
 
     /// Makes the chrome read as part of the tab's page: the strip takes the color along the page's top
     /// edge, the window behind takes the page's background, and strip and traffic lights are drawn light
     /// or dark to stay legible. This runs on every sample while scrolling, so it only touches what
     /// changed. The window's own appearance is left alone: pages take their color scheme from it.
-    private func applyTint(of tab: Tab) {
+    /// `fading` is the fade the page is making to this color; a change of tab has none.
+    private func applyTint(of tab: Tab, fading: PageTint.Fade? = nil) {
         guard let window else { return }
         let color = tab.tint
-        strip.setTint(color, fading: tab.tintFade)
+        strip.setTint(color, fading: fading)
 
         let background = tab.isBlank ? nil : tab.webView.underPageBackgroundColor
         if window.backgroundColor != background ?? .textBackgroundColor { window.backgroundColor = background ?? .textBackgroundColor }
@@ -276,14 +278,14 @@ final class WindowController: NSWindowController, NSWindowDelegate, WKWebExtensi
         window?.makeFirstResponder(active.webView)
     }
 
-    // MARK: PinnedTabs
+    // MARK: Pins
 
-    /// PinnedTabs the tab at its current address, moving it to the end of the pinned tabs, or unpins it,
+    /// Pins the tab at its current address, moving it to the end of the pinned tabs, or unpins it,
     /// making it the first ordinary tab. Blank tabs can't be pinned.
     func setPinned(_ pinned: Bool, tab: Tab) {
         guard pinned != tab.isPinned, let index = tabs.firstIndex(where: { $0 === tab }) else { return }
         if pinned {
-            guard let url = tab.webView.url else { return }
+            guard let url = tab.url else { return }
             tab.pinnedURL = url
             PinnedTabs.urls.append(url)
         } else {
@@ -340,7 +342,7 @@ final class WindowController: NSWindowController, NSWindowDelegate, WKWebExtensi
         return true
     }
 
-    /// PinnedTabs the current tab, or unpins it if it already is.
+    /// Pins the current tab, or unpins it if it already is.
     @objc func togglePin(_ sender: Any?) {
         if let active { setPinned(!active.isPinned, tab: active) }
     }

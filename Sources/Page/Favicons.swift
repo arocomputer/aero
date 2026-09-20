@@ -51,10 +51,18 @@ final class Favicons {
         fetched.countLimit = 100
     }
 
-    /// Downloads an icon without sending or keeping cookies.
+    /// Downloads an icon without sending or keeping cookies. The page names the address, so the
+    /// download is given up once it passes `limit` rather than held in memory whole.
     nonisolated static func download(_ url: URL) async throws -> Data? {
-        let (data, response) = try await session.data(from: url)
-        return (response as? HTTPURLResponse)?.statusCode == 200 && data.count <= 2_000_000 ? data : nil
+        let limit = 2_000_000
+        let (bytes, response) = try await session.bytes(from: url)
+        guard (response as? HTTPURLResponse)?.statusCode == 200, response.expectedContentLength <= limit else { return nil }
+        var data = Data()
+        for try await byte in bytes {
+            data.append(byte)
+            if data.count > limit { return nil }
+        }
+        return data
     }
 
     /// Turns the result of `declaredScript` into icons, dropping entries without a usable address.
@@ -85,7 +93,7 @@ final class Favicons {
         var urls = ordered.map(\.element.url)
         if let conventional = URL(string: "/favicon.ico", relativeTo: page)?.absoluteURL { urls.append(conventional) }
         var seen: Set<URL> = []
-        return urls.filter { ["http", "https"].contains($0.scheme?.lowercased() ?? "") && seen.insert($0).inserted }
+        return urls.filter { AddressInput.isWeb($0) && seen.insert($0).inserted }
     }
 
     /// The icon remembered for the address's host, from memory or disk; nil when there is none yet.

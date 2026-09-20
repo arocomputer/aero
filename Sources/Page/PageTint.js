@@ -166,12 +166,14 @@
 
     // What a pinned element paints that hit-testing skips: layers set to ignore the pointer,
     // such as a scrim of blurs and a fading tint laid behind a bar, and its pseudo-elements.
+    // Hit-testing leaves out what is not visible, so this does too. Only the first 60 descendants
+    // are walked, one at a time: a pinned app shell can hold the whole page.
     function hiddenLayers(element, x) {
         const layers = [];
-        let seen = 0;
-        for (const child of element.querySelectorAll('*')) {
-            if (++seen > 60) break;
+        const walker = document.createTreeWalker(element, NodeFilter.SHOW_ELEMENT);
+        for (let child = walker.nextNode(), walked = 1; child && walked <= 60; child = walker.nextNode(), walked++) {
             const style = getComputedStyle(child);
+            if (style.visibility === 'hidden') continue;
             if (style.pointerEvents !== 'none' || (style.position !== 'absolute' && style.position !== 'fixed')) continue;
             const box = child.getBoundingClientRect();
             if (box.left <= x && box.right >= x && box.top <= 1 && box.bottom - Math.max(box.top, 0) >= 12)
@@ -180,7 +182,8 @@
         const width = element.getBoundingClientRect().width;
         for (const pseudo of ['::before', '::after']) {
             const style = getComputedStyle(element, pseudo);
-            if (style.content === 'none' || (style.position !== 'absolute' && style.position !== 'fixed')) continue;
+            if (style.content === 'none' || style.visibility === 'hidden') continue;
+            if (style.position !== 'absolute' && style.position !== 'fixed') continue;
             if (parseFloat(style.top) <= 1 && parseFloat(style.height) >= 12 && parseFloat(style.width) >= width * 0.9)
                 layers.push([element, style, pseudo]);
         }
