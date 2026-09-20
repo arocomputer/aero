@@ -7,9 +7,12 @@
 // a sticky header, or an app's sidebar. A plain colored column with a pinned layer in front of it
 // counts too, which is how GitHub builds its sidebar. An invisible layer does not count, and neither
 // does anything less than 12px tall at the edge: a site's loading bar is pinned and full width, and
-// would otherwise turn the strip its color whenever a page loads slowly. A band spans nearly the full width: a hero, a full-bleed
-// section, often just the page's backdrop. Pinned beats scrolling, a band beats a column, then the
-// wider wins. Anything else, a card or a column passing by, leaves the page's own background.
+// would otherwise turn the strip its color whenever a page loads slowly. A band runs from one side
+// of the page to the other: a hero, a full-bleed section, often just the page's backdrop. A hero
+// set in from the sides, however wide, is a card: the page's background shows beside it and above
+// its rounded corners, and that background is what the strip continues. Pinned beats scrolling, a
+// band beats a column, then the wider wins. Anything else, a card or a column passing by, leaves
+// the page's own background.
 //
 // The report, sent when it changes, is "r,g,b", "page", or "unknown:<n>:<look>" when a band is an
 // image, gradient or other painted element: n numbers the element and look is a hash of its
@@ -211,9 +214,13 @@
         let r = 0, g = 0, b = 0, a = 0, owner = null, glass = null;
         const front = [];
         const result = (answer, element, isPainted) => {
-            const own = owner || element, width = own.getBoundingClientRect().width;
+            const own = owner || element, box = own.getBoundingClientRect(), width = box.width;
+            // A band runs from one side of the page to the other. Something nearly as wide but inset,
+            // a rounded card holding a hero, leaves the page's own background showing beside it and
+            // above its corners, and a strip in the card's color would sit on the page like a lid.
+            const isBand = box.left <= 4 && box.right >= document.documentElement.clientWidth - 4;
             const stays = isPinned(own) || front.some(e => isPinned(e) && e.getBoundingClientRect().width <= width + 2);
-            return { answer, width, stays, isPainted };
+            return { answer, width, stays, isPainted, isBand };
         };
         // Adds one layer, `pseudo` naming the pseudo-element when it is one. Returns the result when
         // the walk ends at it.
@@ -294,7 +301,7 @@
         for (const f of [0.02, 0.25, 0.5, 0.75, 0.98]) {
             const found = at(Math.floor(innerWidth * f));
             if (!found) continue;
-            const isBand = found.width >= innerWidth * 0.9;
+            const isBand = found.isBand;
             if (!isBand && (!found.stays || found.isPainted)) continue;
             const rank = (found.stays ? 2 : 0) + (isBand ? 1 : 0) + found.width / (innerWidth * 10);
             if (rank > best) { answer = found.answer; best = rank; }

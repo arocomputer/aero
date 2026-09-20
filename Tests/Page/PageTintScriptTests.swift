@@ -92,6 +92,16 @@ private let togglesSolidOnScroll =
     #expect(await page.settles { $0.hasPrefix("0,0,0~") })
 }
 
+@MainActor @Test func heroSetInFromTheSidesIsACardNotABand() async {
+    // Corners tight enough that every sample along the top lands on the card, none on the page.
+    let card = "<div style='margin:0 12px;height:600px;border-radius:6px;background:rgb(40,44,52)'></div><main></main>"
+    let inset = TintedPage("<style>body{background:rgb(244,244,244)}</style>" + card)
+    #expect(await inset.settles { $0 == "page" })
+
+    let bleed = TintedPage("<div style='height:600px;background:rgb(40,44,52)'></div><main></main>")
+    #expect(await bleed.settles { $0 == "40,44,52" })
+}
+
 @MainActor @Test func headerInsideAWebComponentIsRead() async {
     let page = TintedPage(
         """
