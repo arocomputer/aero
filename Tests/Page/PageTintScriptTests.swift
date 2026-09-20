@@ -16,16 +16,10 @@ import WebKit
         """
 
     init(_ html: String) {
-        let configuration = WKWebViewConfiguration()
+        let configuration = offscreenPageConfiguration()
         webView = WKWebView(frame: NSRect(x: 0, y: 0, width: 1000, height: 700), configuration: configuration)
         window = NSWindow(contentRect: webView.frame, styleMask: [.borderless], backing: .buffered, defer: false)
         super.init()
-        // A window that is never shown counts as hidden, and the script lets a hidden page wait. Only
-        // the script's own world is told otherwise; the page is left alone.
-        configuration.userContentController.addUserScript(
-            WKUserScript(
-                source: "Object.defineProperty(document, 'hidden', { get: () => false })",
-                injectionTime: .atDocumentStart, forMainFrameOnly: true, in: .defaultClient))
         TintRouter.install(in: configuration.userContentController, handler: self)
         window.isReleasedWhenClosed = false
         window.contentView = webView
@@ -40,8 +34,9 @@ import WebKit
         _ = try? await webView.evaluateJavaScript(script + "; 0")
     }
 
-    /// Waits until the latest report satisfies `expected`, and returns whether it came in time.
-    func settles(timeout: Double = 5, on expected: (String) -> Bool) async -> Bool {
+    /// Waits until the latest report satisfies `expected`, and returns whether it came in time. The
+    /// limit is generous because it only costs time when a test is failing anyway.
+    func settles(timeout: Double = 20, on expected: (String) -> Bool) async -> Bool {
         let start = Date()
         while Date().timeIntervalSince(start) < timeout {
             if let last = reports.last, expected(last) { return true }

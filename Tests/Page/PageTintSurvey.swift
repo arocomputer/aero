@@ -57,13 +57,8 @@ private func rgb(_ color: NSColor?) -> [Int]? {
 
 @MainActor private func survey(_ site: String) async -> [String] {
     let reports = Reports()
-    let configuration = WKWebViewConfiguration()
+    let configuration = offscreenPageConfiguration()
     configuration.websiteDataStore = .nonPersistent()
-    // A window that is never shown counts as hidden, and the script lets a hidden page wait.
-    configuration.userContentController.addUserScript(
-        WKUserScript(
-            source: "Object.defineProperty(document, 'hidden', { get: () => false })",
-            injectionTime: .atDocumentStart, forMainFrameOnly: true, in: .defaultClient))
     TintRouter.install(in: configuration.userContentController, handler: reports)
     configuration.applicationNameForUserAgent = "Version/26.0 Safari/605.1.15"
     let webView = WKWebView(frame: NSRect(x: 0, y: 0, width: 1280, height: 800), configuration: configuration)
