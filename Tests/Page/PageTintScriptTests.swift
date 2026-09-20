@@ -88,12 +88,14 @@ private let togglesSolidOnScroll =
 }
 
 @MainActor @Test func heroSetInFromTheSidesIsACardNotABand() async {
-    // Corners tight enough that every sample along the top lands on the card, none on the page.
-    let card = "<div style='margin:0 12px;height:600px;border-radius:6px;background:rgb(40,44,52)'></div><main></main>"
+    // Corners tight enough that every sample along the top lands on the card, none on the page, and
+    // a page too short to scroll: a classic scrollbar, which a Mac with no trackpad always shows,
+    // would narrow the page and move the last sample off the card.
+    let card = "<div style='margin:0 12px;height:400px;border-radius:6px;background:rgb(40,44,52)'></div>"
     let inset = TintedPage("<style>body{background:rgb(244,244,244)}</style>" + card)
     #expect(await inset.settles { $0 == "page" })
 
-    let bleed = TintedPage("<div style='height:600px;background:rgb(40,44,52)'></div><main></main>")
+    let bleed = TintedPage("<div style='height:400px;background:rgb(40,44,52)'></div>")
     #expect(await bleed.settles { $0 == "40,44,52" })
 }
 
