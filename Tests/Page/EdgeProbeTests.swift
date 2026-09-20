@@ -54,13 +54,13 @@ import WebKit
 private let togglesSolidOnScroll =
     "<script>addEventListener('scroll',()=>document.querySelector('header').classList.toggle('solid',scrollY>50))</script>"
 
-@MainActor @Test func blurredHeaderIsAMaterialUntilItTurnsSolid() async {
+@MainActor @Test func blurredHeaderIsReadThroughToWhatIsBehindIt() async {
     let page = ProbedPage(
         """
         <style>header{backdrop-filter:blur(12px)} header.solid{background:rgb(0,0,0)}</style>
         <header></header><div class=hero></div><main></main>\(togglesSolidOnScroll)
         """)
-    #expect(await page.settles { $0 == "29,78,216|0.00" })
+    #expect(await page.settles { $0 == "29,78,216" })
     await page.run("scrollTo(0, 1500)")
     #expect(await page.settles { $0 == "0,0,0" })
 }
@@ -74,11 +74,44 @@ private let togglesSolidOnScroll =
     #expect(await page.settles { $0 == "255,255,255" })
     await page.run("scrollTo(0, 1500)")
     #expect(await page.settles { $0.hasPrefix("0,0,0~") })
-    let time = try #require(page.reports.last?.split(separator: "~").last.flatMap { Int($0) })
+    let fade = try #require(page.reports.last?.split(separator: "~").last?.split(separator: ",", maxSplits: 1))
+    let time = try #require(Int(fade[0]))
     #expect(time > 100 && time <= 300)
+    #expect(fade.last == "ease")
 }
 
-@MainActor @Test func scrimHiddenFromHitTestingIsReadAsTheHeadersMaterial() async {
+@MainActor @Test func headerFadedInAsAPseudoElementReportsWhereItIsGoing() async {
+    let page = ProbedPage(
+        """
+        <style>header::after{content:'';position:absolute;inset:0;background:rgb(0,0,0);opacity:0;transition:opacity .2s}
+        header.solid::after{opacity:1}</style>
+        <header></header><div class=hero></div><main></main>\(togglesSolidOnScroll)
+        """)
+    #expect(await page.settles { $0 == "29,78,216" })
+    await page.run("scrollTo(0, 1500)")
+    #expect(await page.settles { $0.hasPrefix("0,0,0~") })
+}
+
+@MainActor @Test func headerInsideAWebComponentIsRead() async {
+    let page = ProbedPage(
+        """
+        <top-banner style="display:block;position:sticky;top:0;height:64px"></top-banner><main></main>
+        <script>document.querySelector('top-banner').attachShadow({mode:'open'}).innerHTML =
+            '<div style="height:64px;background:rgb(73,1,134)"></div>'</script>
+        """)
+    #expect(await page.settles { $0 == "73,1,134" })
+}
+
+@MainActor @Test func dialogScrimOverTheWholePageIsLeftToPixels() async {
+    let page = ProbedPage(
+        """
+        <header style="background:#000" inert></header><main inert></main>
+        <div style="position:fixed;inset:0;background:rgba(0,0,0,.4)"></div>
+        """)
+    #expect(await page.settles { $0.hasPrefix("unknown:") })
+}
+
+@MainActor @Test func scrimHiddenFromHitTestingIsRead() async {
     let page = ProbedPage(
         """
         <style>body{background:rgb(15,15,14)} header{position:sticky}
@@ -87,7 +120,7 @@ private let togglesSolidOnScroll =
         .tint{background:linear-gradient(to bottom, color-mix(in srgb, rgb(15,15,14) 88%, transparent) 0%, transparent 100%)}</style>
         <header><div class=scrim><div class=blur></div><div class=tint></div></div></header><main></main>
         """)
-    #expect(await page.settles { $0 == "15,15,14|0.88" })
+    #expect(await page.settles { $0 == "15,15,14" })
 }
 
 @MainActor @Test func glassHeaderOverAnImageAnswersWithItsOwnTint() async {
@@ -96,7 +129,7 @@ private let togglesSolidOnScroll =
         <style>header{backdrop-filter:blur(20px);background:rgba(250,250,252,.8)} .hero{background-image:radial-gradient(#123,#456)}</style>
         <header></header><div class=hero></div><main></main>
         """)
-    #expect(await page.settles { $0 == "250,250,252|0.80" })
+    #expect(await page.settles { $0 == "250,250,252" })
 }
 
 @MainActor @Test func verticalGradientCountsAsItsTopStop() async {

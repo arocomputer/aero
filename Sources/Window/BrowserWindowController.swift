@@ -18,8 +18,6 @@ final class BrowserWindowController: NSWindowController, NSWindowDelegate, WKWeb
     private let find = FindView()
     private var scrollMonitor: Any?
     private var sleepTimer: Timer?
-    /// How far the strip reaches over the web views; see `Tab.obscuredTop`.
-    private var obscuredTop: CGFloat = 0
     weak var extensionActionAnchor: NSView?
     private weak var browserMenuAnchor: NSView?
     /// Set by `registerWithExtensions`; until then the extension runtime is told nothing.
@@ -49,11 +47,6 @@ final class BrowserWindowController: NSWindowController, NSWindowDelegate, WKWeb
 
         let root = RootView(strip: strip, content: content, omnibox: omnibox, browserMenu: browserMenu, find: find)
         window.contentView = root
-        root.onObscuredTop = { [weak self] top in
-            guard let self, top != obscuredTop else { return }
-            obscuredTop = top
-            tabs.forEach { $0.obscuredTop = top }
-        }
         strip.controller = self
         downloads.onChange = { [weak self] in self?.downloadsDidChange() }
         extensionsDidChange()
@@ -89,7 +82,6 @@ final class BrowserWindowController: NSWindowController, NSWindowDelegate, WKWeb
     func openTab(url: URL? = nil, configuration: WKWebViewConfiguration? = nil, inBackground: Bool = false) -> Tab {
         let tab = Tab(configuration: configuration)
         tab.owner = self
-        tab.obscuredTop = obscuredTop
         tabs.append(tab)
         if isRegisteredWithExtensions { WebExtensions.shared.controller.didOpenTab(tab) }
         if let url { tab.load(url) }
@@ -193,7 +185,7 @@ final class BrowserWindowController: NSWindowController, NSWindowDelegate, WKWeb
     private func applyChrome(of tab: Tab) {
         guard let window else { return }
         let color = tab.chromeColor
-        strip.show(pageColor: color, opacity: tab.chromeOpacity, over: tab.chromeGlide)
+        strip.show(pageColor: color, fading: tab.chromeFade)
 
         let background = tab.isBlank ? nil : tab.webView.underPageBackgroundColor
         if window.backgroundColor != background ?? .textBackgroundColor { window.backgroundColor = background ?? .textBackgroundColor }

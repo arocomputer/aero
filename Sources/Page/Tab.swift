@@ -4,8 +4,7 @@ import WebKit
 
 /// One browser tab. Owns its web view, records visits to history, and tells its window controller
 /// whenever title, URL or loading state change. A tab is "blank" until its first navigation.
-/// Its `chromeColor` follows what the page shows along its top edge: WebKit's own reading of a pinned
-/// header where the system offers one, and the `PageEdge` probe for everything else.
+/// Its `chromeColor` follows what the page shows along its top edge.
 /// A pinned tab shows as its site's icon or a monogram in the strip, can't be closed, and comes back
 /// on the next launch.
 /// A tab nobody has looked at for `sleepAfter` goes to sleep: it gives up its page, and with it the
@@ -48,27 +47,8 @@ final class Tab: NSObject, WKNavigationDelegate, WKUIDelegate, WKWebExtensionTab
     /// Set while a reload is being hidden; see `reload`.
     private var reloadHold: ReloadHold?
 
-    /// How much of the web view's top the strip covers. On macOS 26 the page runs under the strip with
-    /// this as its obscured inset, which is what makes WebKit sample the color of whatever is pinned
-    /// there; see `sampledHeaderColor`. Page and snapshot coordinates still start below the inset.
-    var obscuredTop: CGFloat = 0 { didSet { if obscuredTop != oldValue { applyObscuredTop() } } }
-
-    /// WebKit's name for the color of the fixed or sticky content along the top of the page, which it
-    /// samples in the render process while the page is laid out under an obscured inset. It is what
-    /// Safari tints its toolbar with, and it sees what a script cannot: gradients, pseudo-elements and
-    /// layers hidden from hit-testing. It is private, so it is looked up at run time and everything
-    /// works without it: before macOS 26 it does not exist, and the probe decides alone.
-    private static let sampledKey = "_sampledTopFixedPositionContentColor"
-    private var isObservingSampled = false
-
-    /// Nil when WebKit has no opinion: nothing is pinned, or the header is translucent or blurred,
-    /// which the probe composites instead.
-    private var sampledHeaderColor: NSColor? {
-        guard isObservingSampled, let color = webView.value(forKey: Self.sampledKey) as? NSColor,
-            color.alphaComponent > 0.99
-        else { return nil }
-        return color
-    }
+    /// What `chromeColor` last was, shown while a new page has yet to report; nil after a blank tab.
+    private var lastChrome: NSColor?
 
     /// The host of the page last committed, to tell moving within a site from leaving it.
     private var committedHost: String?
@@ -76,11 +56,7 @@ final class Tab: NSObject, WKNavigationDelegate, WKUIDelegate, WKWebExtensionTab
     /// Follows what the page shows along its top edge, for `chromeColor`.
     private(set) lazy var edge = PageEdge(
         isLoading: { [weak self] in self?.webView.isLoading ?? false },
-        // No snapshot is worth a frozen page while WebKit already names the color.
-        isShown: { [weak self] in
-            guard let self, sampledHeaderColor == nil else { return false }
-            return webView.window != nil && webView.bounds.width > 0
-        },
+        isShown: { [weak self] in self?.webView.window != nil && (self?.webView.bounds.width ?? 0) > 0 },
         snapshot: { [weak self] done in
             guard let webView = self?.webView else { return done(nil) }
             let configuration = WKSnapshotConfiguration()
@@ -113,39 +89,10 @@ final class Tab: NSObject, WKNavigationDelegate, WKUIDelegate, WKWebExtensionTab
         return webView
     }
 
-    deinit { detach() }
-
-    /// Stops observing the current web view, before it is let go.
-    private func detach() {
-        observations = []
-        if isObservingSampled { webView.removeObserver(self, forKeyPath: Self.sampledKey) }
-        isObservingSampled = false
-    }
-
-    override func observeValue(
-        forKeyPath keyPath: String?, of object: Any?, change: [NSKeyValueChangeKey: Any]?, context: UnsafeMutableRawPointer?
-    ) {
-        guard keyPath == Self.sampledKey else { return }
-        // The probe may have been holding back a snapshot that is wanted now.
-        if sampledHeaderColor == nil { edge.resume() }
-        owner?.tabChromeDidChange(self)
-    }
-
-    private func applyObscuredTop() {
-        if #available(macOS 26.0, *) {
-            webView.obscuredContentInsets = NSEdgeInsets(top: obscuredTop, left: 0, bottom: 0, right: 0)
-        }
-    }
-
     /// Makes this tab the delegate and observer of its current web view.
     private func attach() {
         webView.navigationDelegate = self
         webView.uiDelegate = self
-        applyObscuredTop()
-        if webView.responds(to: NSSelectorFromString(Self.sampledKey)) {
-            webView.addObserver(self, forKeyPath: Self.sampledKey, options: [], context: nil)
-            isObservingSampled = true
-        }
         observations = [
             webView.observe(\.title) { [weak self] _, _ in self?.titleChanged() },
             webView.observe(\.url) { [weak self] _, _ in self?.urlChanged() },
@@ -260,7 +207,7 @@ final class Tab: NSObject, WKNavigationDelegate, WKUIDelegate, WKWebExtensionTab
                     self.maySleep(hiddenFor: minimum), let url = asked.url
                 else { return }
                 self.asleep = (self.title, url, asked.interactionState)
-                self.detach()
+                self.observations = []
                 asked.navigationDelegate = nil
                 asked.uiDelegate = nil
                 self.webView = Tab.makeWebView(Tab.configuration())
@@ -279,20 +226,14 @@ final class Tab: NSObject, WKNavigationDelegate, WKUIDelegate, WKWebExtensionTab
     var chromeColor: NSColor? {
         if let reloadHold { return reloadHold.chromeColor }
         if isBlank { return nil }
-        // Styles are exact and arrive the moment a header starts to change, so they come first.
-        // WebKit's reading covers what only pixels can tell, then a snapshot, then the background.
-        let read = edge.isFromStyles ? edge.color : nil
-        return read ?? sampledHeaderColor ?? edge.color ?? webView.underPageBackgroundColor?.withAlphaComponent(1)
+        // A page that has only just committed has not said what it shows; stay as we were.
+        if edge.isWaiting { return lastChrome }
+        lastChrome = edge.color ?? webView.underPageBackgroundColor?.withAlphaComponent(1)
+        return lastChrome
     }
 
-    /// How long the page takes to reach `chromeColor`, so the strip can take as long; 0 for at once.
-    var chromeGlide: TimeInterval { reloadHold == nil && edge.isFromStyles ? edge.glide : 0 }
-
-    /// How opaque the strip draws `chromeColor`: below 1 when the page's header blurs what is behind it
-    /// and the page runs under the strip, so there is something beneath the strip to blur.
-    var chromeOpacity: CGFloat {
-        reloadHold == nil && !isBlank && obscuredTop > 0 ? edge.opacity ?? 1 : 1
-    }
+    /// The fade the page's own header is making to `chromeColor`, for the strip to make with it.
+    var chromeFade: PageEdge.Fade? { reloadHold == nil && edge.isFromStyles ? edge.fade : nil }
 
     /// Reloads the page so that nothing appears to move, and the strip keeps its color meanwhile; see
     /// `ReloadHold`. A tab that is hidden or has no page reloads plainly.
@@ -303,7 +244,7 @@ final class Tab: NSObject, WKNavigationDelegate, WKUIDelegate, WKWebExtensionTab
             reloadHold = nil
             owner?.tabChromeDidChange(self)
         }
-        ReloadHold.begin(in: webView, below: obscuredTop, chromeColor: chromeColor, onEnd: release) { [weak self] hold in
+        ReloadHold.begin(in: webView, chromeColor: chromeColor, onEnd: release) { [weak self] hold in
             self?.reloadHold = hold
             self?.webView.reload()
         }
@@ -492,7 +433,7 @@ final class Tab: NSObject, WKNavigationDelegate, WKUIDelegate, WKWebExtensionTab
         if let url = webView.url { History.shared.visit(url) }
         showRememberedFavicon(for: webView.url)
         let host = webView.url?.host
-        edge.reset(keepingColor: host != nil && host == committedHost)
+        edge.reset(holding: host != nil && host == committedHost ? 2 : 0.25)
         committedHost = host
         reveal()
         reloadHold?.pageCommitted()

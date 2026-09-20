@@ -94,18 +94,16 @@ These say what Aero is for. They are intent, not mechanism: how each one is met 
 comments beside the code, which is also where the numbers, timings and trade-offs are kept. A
 better way to meet one of them is welcome; change the code and its comments, not this list.
 
-- The strip is one with the page. It has no surface of its own: it takes on what the page shows
-  along its top, the color and, where the page's header is translucent, the material, so that
-  window and page read as one object. It stays legible by switching its own appearance to light
-  or dark. It follows what stays put, a header, a sidebar, a hero, never the cards and columns
-  scrolling past, and never a page's declared theme color.
+- The strip is one with the page. It has no surface of its own: it takes the color the page shows
+  along its top, and changes the way the page changes, fading when the header fades, so that window
+  and page read as one object. It stays legible by switching its own appearance to light or dark.
+  It follows what stays put, a header, a sidebar, a hero, never the cards and columns scrolling
+  past, and never a page's declared theme color.
 - The chrome must not cost the page. Whatever runs inside a page or makes it paint is paid for by
   the person scrolling it, so it is rare, cheap and out of the page's reach. Claim a cost or a
   saving only with a measurement, and say how it was taken.
 - The engine is the system's WebKit. How fast a page renders is WebKit's doing: before blaming
-  Aero for a slow page, compare Safari and a bare `WKWebView` on the same Mac. System behavior is
-  preferred over imitating it; private API is read by name at run time and everything works
-  without it.
+  Aero for a slow page, compare Safari and a bare `WKWebView` on the same Mac.
 - Memory is given back. A tab nobody is looking at should not hold what a page costs, and giving
   it up must not lose anything the person would miss.
 - Nothing leaves the Mac. History and site icons are local files, search result pages are not

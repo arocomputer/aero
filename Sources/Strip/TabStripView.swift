@@ -5,10 +5,7 @@ import AppKit
 /// shows while the pointer is over the strip. Laid out by hand; empty areas drag the window.
 /// Changes to the tabs animate: the active highlight slides between items, new ones slide in, the rest make room.
 /// It has no surface of its own: it shows the color along the page's top edge, and its `appearance`
-/// is set light or dark to stay legible on it. Where the page's header is a material, a tint over a
-/// blur of what scrolls beneath, the strip is the same: the color is thinned and a blur of the page
-/// running under the strip shows through, so text leaving the header keeps fading through the tabs
-/// instead of being cut off by a lid. See `show(pageColor:opacity:over:)`.
+/// is set light or dark to stay legible on it. See `show(pageColor:fading:)`.
 final class TabStripView: NSView {
     weak var controller: BrowserWindowController?
     /// Space reserved on the left for the traffic lights.
@@ -16,16 +13,8 @@ final class TabStripView: NSView {
     /// Matches the right controls to the close button's distance from the opposite window edge.
     var trailingInset: CGFloat = 14 { didSet { if trailingInset != oldValue { needsLayout = true } } }
 
-    /// The color along the page's top edge, shown behind the strip; nil shows the window through.
-    /// Every change glides over a moment, so the strip reads as one surface easing between the page's
-    /// colors instead of stepping through samples.
+    /// The color along the page's top edge, shown behind the strip; see `show(pageColor:fading:)`.
     private var pageColor: NSColor?
-    private var pageOpacity: CGFloat = 1
-    /// Never thin enough to leave the tabs' titles on raw moving text.
-    private static let leastOpacity: CGFloat = 0.6
-
-    private let blur = Backdrop()
-    private let tint = Surface()
 
     private var pinButtons: [PinButton] = []
     private var pills: [TabPillView] = []
@@ -55,15 +44,6 @@ final class TabStripView: NSView {
     override init(frame: NSRect) {
         super.init(frame: frame)
         wantsLayer = true
-        blur.blendingMode = .withinWindow
-        blur.material = .headerView
-        blur.state = .active
-        blur.isHidden = true
-        for surface in [blur, tint] as [NSView] {
-            surface.frame = bounds
-            surface.autoresizingMask = [.width, .height]
-            addSubview(surface)
-        }
         addSubview(highlight)
 
         backButton.onClick = { [weak self] in self?.controller?.goBackInHistory(nil) }
@@ -104,21 +84,27 @@ final class TabStripView: NSView {
         return bounds.contains(point) && hitTest(point) === self
     }
 
-    /// Shows the color along the page's top edge, `opacity` of it over a blur of the page when that is
-    /// below 1; nil shows the window through. `glide` is how long the page's own header takes to get
-    /// there: the strip fades over the same time with the same easing, so the two change as one. A
-    /// change the page makes at once is shown at once, softened only enough not to flash.
-    func show(pageColor color: NSColor?, opacity: CGFloat, over glide: TimeInterval) {
-        guard color != pageColor || opacity != pageOpacity else { return }
-        (pageColor, pageOpacity) = (color, opacity)
-        let shown = max(opacity, Self.leastOpacity)
-        blur.isHidden = color == nil || shown >= 1
+    /// Shows the color along the page's top edge; nil shows the window through. When the page's own
+    /// header is fading there, `fading` is that fade, and the strip runs the same one: same length,
+    /// same curve, started as the header starts, so the two change as one. A change the page makes at
+    /// once is shown at once, with nothing added: the report leaves the page before the frame it
+    /// describes does, so setting the color here puts both on the same refresh, and any softening
+    /// would be lag.
+    func show(pageColor color: NSColor?, fading: PageEdge.Fade?) {
+        guard color != pageColor else { return }
+        pageColor = color
+        guard let fading else {
+            CATransaction.begin()
+            CATransaction.setDisableActions(true)
+            layer?.backgroundColor = color?.cgColor
+            CATransaction.commit()
+            return
+        }
         NSAnimationContext.runAnimationGroup { context in
-            context.duration = glide > 0 ? min(glide, 1) : 0.05
-            // The default curve is CSS's `ease`, which is what nearly every header fades with.
-            context.timingFunction = CAMediaTimingFunction(name: glide > 0 ? .default : .linear)
+            context.duration = min(fading.duration, 1)
+            context.timingFunction = fading.curve
             context.allowsImplicitAnimation = true
-            tint.layer?.backgroundColor = color?.withAlphaComponent(shown).cgColor
+            layer?.backgroundColor = color?.cgColor
         }
     }
 
@@ -262,22 +248,6 @@ final class TabStripView: NSView {
 
     override func mouseEntered(with event: NSEvent) { plusButton.animator().alphaValue = 1 }
     override func mouseExited(with event: NSEvent) { plusButton.animator().alphaValue = 0 }
-}
-
-/// The strip's color. It and the blur behind it are passed over by the pointer, so clicks on empty
-/// strip still reach the strip, which drags and zooms the window.
-private final class Surface: NSView {
-    override init(frame: NSRect) {
-        super.init(frame: frame)
-        wantsLayer = true
-    }
-
-    required init?(coder: NSCoder) { fatalError("not used") }
-    override func hitTest(_ point: NSPoint) -> NSView? { nil }
-}
-
-private final class Backdrop: NSVisualEffectView {
-    override func hitTest(_ point: NSPoint) -> NSView? { nil }
 }
 
 /// Everything that moves the strip's items: how many there are, which is active and the space they get.

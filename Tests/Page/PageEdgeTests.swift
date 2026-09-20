@@ -77,37 +77,32 @@ import Testing
     #expect(fixture.snapshots == PageEdge.maxSnapshots)
 }
 
-@MainActor @Test func colorKeptAcrossAPageOfTheSameSiteLastsUntilItsFirstReport() {
+@MainActor @Test func aNewPageHoldsTheLastColorUntilItReportsOrTheHoldRunsOut() async {
     let fixture = Fixture()
     fixture.edge.report("10,20,30")
-    fixture.edge.reset(keepingColor: true)
-    #expect(fixture.edge.color != nil)
+    fixture.edge.reset(holding: 2)
+    #expect(fixture.edge.isWaiting && fixture.edge.color != nil)
     fixture.edge.report("page")
-    #expect(fixture.edge.color == nil)
+    #expect(!fixture.edge.isWaiting && fixture.edge.color == nil)
 
     fixture.edge.report("10,20,30")
-    fixture.edge.reset()
-    #expect(fixture.edge.color == nil)
+    fixture.edge.reset(holding: 0.03)
+    await fixture.wait()
+    #expect(!fixture.edge.isWaiting && fixture.edge.color == nil)
 }
 
-@MainActor @Test func aBlurringHeaderReportsHowOpaqueItsTintIs() {
+@MainActor @Test func aFadingHeaderReportsTheFadeItMakes() {
     let fixture = Fixture()
-    fixture.edge.report("15,15,14|0.88")
-    #expect(fixture.edge.color == NSColor(srgbRed: 15 / 255, green: 15 / 255, blue: 14 / 255, alpha: 1))
-    #expect(fixture.edge.opacity == 0.88)
-
-    fixture.edge.report("0,0,0")
-    #expect(fixture.edge.opacity == nil)
-}
-
-@MainActor @Test func aFadingHeaderReportsHowLongItTakes() {
-    let fixture = Fixture()
-    fixture.edge.report("0,0,0|0.80~300")
+    fixture.edge.report("0,0,0~300,cubic-bezier(0.4, 0, 0.2, 1)")
     #expect(fixture.edge.color == NSColor(srgbRed: 0, green: 0, blue: 0, alpha: 1))
-    #expect(fixture.edge.opacity == 0.8)
-    #expect(fixture.edge.glide == 0.3)
+    #expect(fixture.edge.fade?.duration == 0.3)
+    var first: [Float] = [0, 0]
+    fixture.edge.fade?.curve.getControlPoint(at: 1, values: &first)
+    #expect(first == [0.4, 0])
     #expect(fixture.edge.isFromStyles)
 
+    fixture.edge.report("255,255,255")
+    #expect(fixture.edge.fade == nil)
     fixture.edge.report("unknown:1:look")
     #expect(!fixture.edge.isFromStyles)
 }

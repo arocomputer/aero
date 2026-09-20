@@ -25,32 +25,22 @@ final class ReloadHold {
     /// Notes the anchor and takes the picture, then hands back a hold already covering `webView`, or nil
     /// when the page could not be pictured. Call `webView.reload()` from `ready`, then `pageCommitted()`
     /// when the new page commits and `end()` if the load fails. `onEnd` runs once, when the hold is over.
-    /// `top` is the web view's obscured top inset: the page, and so the picture, starts below it.
-    static func begin(
-        in webView: WKWebView, below top: CGFloat, chromeColor: NSColor?, onEnd: @escaping () -> Void,
-        ready: @escaping (ReloadHold?) -> Void
-    ) {
+    static func begin(in webView: WKWebView, chromeColor: NSColor?, onEnd: @escaping () -> Void, ready: @escaping (ReloadHold?) -> Void) {
         webView.callAsyncJavaScript(noteAnchor, arguments: [:], in: nil, in: .defaultClient) { result in
             let anchor = (try? result.get()) as? [String: Any] ?? [:]
             let configuration = WKSnapshotConfiguration()
             configuration.afterScreenUpdates = false
-            // Snapshot coordinates start at the top of the page, below the inset.
-            configuration.rect = CGRect(x: 0, y: 0, width: webView.bounds.width, height: webView.bounds.height - top)
             webView.takeSnapshot(with: configuration) { image, _ in
                 ready(
-                    image.map { ReloadHold(webView: webView, top: top, image: $0, anchor: anchor, chromeColor: chromeColor, onEnd: onEnd) })
+                    image.map { ReloadHold(webView: webView, image: $0, anchor: anchor, chromeColor: chromeColor, onEnd: onEnd) })
             }
         }
     }
 
-    private init(
-        webView: WKWebView, top: CGFloat, image: NSImage, anchor: [String: Any], chromeColor: NSColor?, onEnd: @escaping () -> Void
-    ) {
+    private init(webView: WKWebView, image: NSImage, anchor: [String: Any], chromeColor: NSColor?, onEnd: @escaping () -> Void) {
         (self.webView, self.anchor, self.chromeColor, self.onEnd) = (webView, anchor, chromeColor, onEnd)
         cover = Cover(image: image)
-        let bounds = webView.bounds
-        cover.frame = NSRect(
-            x: 0, y: webView.isFlipped ? top : 0, width: bounds.width, height: bounds.height - top)
+        cover.frame = webView.bounds
         cover.autoresizingMask = [.width, .height]
         cover.onScroll = { [weak self] in self?.end() }
         webView.addSubview(cover)

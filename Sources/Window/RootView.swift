@@ -1,10 +1,7 @@
 import AppKit
 
-/// The window's content view: the strip fills the system titlebar area and the address field fills the
-/// rest. So does the content before macOS 26; from 26 on it fills the window and runs under the strip,
-/// with `onObscuredTop` telling the web views how much of them the strip covers.
+/// The window's content view: the strip fills the system titlebar area, content and address field fill the rest.
 final class RootView: NSView {
-    var onObscuredTop: ((CGFloat) -> Void)?
     private let strip: TabStripView, content: NSView, omnibox: NSView
     private let browserMenu: BrowserMenuView, find: FindView
     /// Kept from the last windowed layout, because in full screen the titlebar leaves the window.
@@ -61,14 +58,8 @@ final class RootView: NSView {
             strip.leadingInset = window.styleMask.contains(.fullScreen) ? 12 : lightsEnd + 18
         }
         strip.frame = NSRect(x: 0, y: 0, width: bounds.width, height: stripHeight)
-        let below = NSRect(x: 0, y: stripHeight, width: bounds.width, height: bounds.height - stripHeight)
-        if #available(macOS 26.0, *) {
-            content.frame = bounds
-            onObscuredTop?(stripHeight)
-        } else {
-            content.frame = below
-        }
-        omnibox.frame = below
+        content.frame = NSRect(x: 0, y: stripHeight, width: bounds.width, height: bounds.height - stripHeight)
+        omnibox.frame = content.frame
         browserMenu.frame = bounds
         find.frame = bounds
         if let window, let close = window.standardWindowButton(.closeButton), !window.styleMask.contains(.fullScreen) {
