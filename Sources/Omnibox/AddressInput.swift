@@ -21,7 +21,7 @@ enum AddressInput {
     }
 
     static func searchURL(for query: String) -> URL {
-        BrowserSettings.searchEngine.url(for: query)
+        Settings.searchEngine.url(for: query)
     }
 
     /// True for the result pages `searchURL` produces, so they can be kept out of history.

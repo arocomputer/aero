@@ -13,17 +13,17 @@ enum SettingsPage {
         let templateURL = Bundle.module.url(forResource: "Settings", withExtension: "html")!
         let template = (try? String(contentsOf: templateURL, encoding: .utf8)) ?? "Settings.html is unavailable."
         let choices = SearchEngine.allCases.map { engine in
-            let selected = engine == BrowserSettings.searchEngine ? " selected" : ""
+            let selected = engine == Settings.searchEngine ? " selected" : ""
             return #"<option value="\#(engine.rawValue)"\#(selected)>\#(escape(engine.name))</option>"#
         }.joined()
-        let appearances = BrowserAppearance.allCases.map { appearance in
-            let selected = appearance == BrowserSettings.appearance ? " selected" : ""
+        let appearances = Appearance.allCases.map { appearance in
+            let selected = appearance == Settings.appearance ? " selected" : ""
             return #"<option value="\#(appearance.rawValue)"\#(selected)>\#(escape(appearance.name))</option>"#
         }.joined()
         let version = Bundle.main.object(forInfoDictionaryKey: "CFBundleShortVersionString") as? String ?? "Development"
         let build = Bundle.main.object(forInfoDictionaryKey: "CFBundleVersion") as? String
         let versionText = build.map { "Version \(version) (\($0))" } ?? "Version \(version)"
-        let folder = BrowserSettings.downloadDirectory.lastPathComponent
+        let folder = Settings.downloadDirectory.lastPathComponent
         return
             template
             .replacingOccurrences(of: "{{mark}}", with: mark)
@@ -36,7 +36,7 @@ enum SettingsPage {
             .replacingOccurrences(of: "{{iconAbout}}", with: symbol("info.circle"))
             .replacingOccurrences(of: "{{searchEngines}}", with: choices)
             .replacingOccurrences(of: "{{appearances}}", with: appearances)
-            .replacingOccurrences(of: "{{faviconsChecked}}", with: BrowserSettings.showsFavicons ? " checked" : "")
+            .replacingOccurrences(of: "{{faviconsChecked}}", with: Settings.showsFavicons ? " checked" : "")
             .replacingOccurrences(of: "{{downloadFolder}}", with: escape(folder))
             .replacingOccurrences(of: "{{passkeyStatus}}", with: escape(Passkeys.status))
             .replacingOccurrences(
@@ -47,12 +47,12 @@ enum SettingsPage {
             .replacingOccurrences(
                 of: "{{defaultStatus}}",
                 with: escape(
-                    BrowserSettings.isDefaultBrowser
+                    Settings.isDefaultBrowser
                         ? "\(appName) is your default browser" : "\(appName) is not your default browser")
             )
             .replacingOccurrences(
                 of: "{{defaultAction}}",
-                with: BrowserSettings.isDefaultBrowser
+                with: Settings.isDefaultBrowser
                     ? "" : #"<a class="button" href="aero://settings/action/make-default">Make Default</a>"#
             )
             .replacingOccurrences(of: "{{version}}", with: escape(versionText))

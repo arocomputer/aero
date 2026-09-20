@@ -2,7 +2,7 @@ import AppKit
 import WebKit
 
 /// The settings page's privileged actions, which arrive as `aero://settings/action/…` links.
-extension BrowserWindowController {
+extension WindowController {
     /// Opens Aero's local settings page from either the application menu or browser menu.
     @objc func openSettings(_ sender: Any?) {
         if active?.webView.url == SettingsPage.pageURL {
@@ -21,22 +21,22 @@ extension BrowserWindowController {
         case "allow-passkeys":
             Passkeys.requestAccess { tab.webView.reload() }
         case "appearance":
-            guard let value, let appearance = BrowserAppearance(rawValue: value) else { return }
-            BrowserSettings.appearance = appearance
+            guard let value, let appearance = Appearance(rawValue: value) else { return }
+            Settings.appearance = appearance
             tab.webView.reload()
         case "favicons":
             guard let value, ["on", "off"].contains(value) else { return }
-            BrowserSettings.showsFavicons = value == "on"
+            Settings.showsFavicons = value == "on"
             (NSApp.delegate as? AppDelegate)?.faviconsSettingChanged()
             tab.webView.reload()
         case "search-engine":
             guard let value, let engine = SearchEngine(rawValue: value) else { return }
-            BrowserSettings.searchEngine = engine
+            Settings.searchEngine = engine
             tab.webView.reload()
         case "choose-downloads":
             chooseDownloadDirectory(for: tab)
         case "show-downloads":
-            NSWorkspace.shared.open(BrowserSettings.downloadDirectory)
+            NSWorkspace.shared.open(Settings.downloadDirectory)
         case "clear-history":
             confirmSettingsChange(
                 title: "Clear browsing history?",
@@ -75,10 +75,10 @@ extension BrowserWindowController {
         panel.canChooseFiles = false
         panel.canChooseDirectories = true
         panel.allowsMultipleSelection = false
-        panel.directoryURL = BrowserSettings.downloadDirectory
+        panel.directoryURL = Settings.downloadDirectory
         panel.beginSheetModal(for: window) { response in
             guard response == .OK, let url = panel.url else { return }
-            BrowserSettings.downloadDirectory = url
+            Settings.downloadDirectory = url
             tab.webView.reload()
         }
     }

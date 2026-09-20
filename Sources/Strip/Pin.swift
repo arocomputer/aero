@@ -2,7 +2,7 @@ import AppKit
 
 /// A pinned tab, shown as its site's icon, or the first letter of its site when it has none. Click
 /// selects it; the context menu unpins it.
-final class PinButton: NSView, TabItem {
+final class Pin: NSView, TabItem {
     private(set) weak var tab: Tab?
     var letter = "" { didSet { if letter != oldValue { label.stringValue = letter } } }
     /// The page's title, shown as the tooltip.

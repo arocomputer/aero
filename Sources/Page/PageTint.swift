@@ -2,7 +2,7 @@ import AppKit
 import WebKit
 
 /// Decides the color the tab strip takes on so the chrome reads as part of the page. The page reports
-/// what should set it (see `EdgeChangeRouter.script` for which elements count): "r,g,b" when its styles
+/// what should set it (see `TintRouter.script` for which elements count): "r,g,b" when its styles
 /// say, "page" when its own background should show, "unknown:<element>" when an image, gradient or
 /// other painted content decides it. The element's name includes how it looks, so a header that turns
 /// from a clear gradient into a dark one is a new name.
@@ -12,7 +12,7 @@ import WebKit
 /// So snapshots are rationed hard: one per look of an element and `maxSnapshots` per page, taken only
 /// once the page has loaded and both scrolling and reports have been quiet for `delay`. Until then,
 /// and whenever that look is at the edge again, `color` is what is known, or stays what it was.
-final class PageEdge {
+final class PageTint {
     /// The color along the top edge; nil until known, and when the page's own background shows there.
     private(set) var color: NSColor?
     /// The fade the page's header is making to `color`, read from the page's own transition so the
@@ -165,18 +165,18 @@ final class PageEdge {
 /// Receives the injected script's reports of what is along the page's top edge and passes each to the
 /// tab whose page sent it. One stateless instance serves every web view, so no tab is retained by its
 /// own configuration and script-opened tabs are covered without registering anything again.
-final class EdgeChangeRouter: NSObject, WKScriptMessageHandler {
-    static let shared = EdgeChangeRouter()
-    static let name = "edge"
+final class TintRouter: NSObject, WKScriptMessageHandler {
+    static let shared = TintRouter()
+    static let name = "tint"
 
-    /// The probe that works out which color the strip should take, from styles alone. It lives in
-    /// EdgeProbe.js beside this file, with the rules it follows, and posts to the handler `name`.
+    /// The script that works out which color the strip should take, from styles alone. It lives in
+    /// PageTint.js beside this file, with the rules it follows, and posts to the handler `name`.
     static let script: String = {
-        let url = Bundle.module.url(forResource: "EdgeProbe", withExtension: "js")!
+        let url = Bundle.module.url(forResource: "PageTint", withExtension: "js")!
         return (try? String(contentsOf: url, encoding: .utf8)) ?? ""
     }()
 
-    /// Adds the probe and its message handler to a configuration's content controller.
+    /// Adds the script and its message handler to a configuration's content controller.
     static func install(in controller: WKUserContentController, handler: WKScriptMessageHandler = shared) {
         controller.addUserScript(
             WKUserScript(source: script, injectionTime: .atDocumentStart, forMainFrameOnly: true, in: .defaultClient))
@@ -185,6 +185,6 @@ final class EdgeChangeRouter: NSObject, WKScriptMessageHandler {
 
     func userContentController(_ controller: WKUserContentController, didReceive message: WKScriptMessage) {
         guard let report = message.body as? String else { return }
-        (message.webView?.navigationDelegate as? Tab)?.edge.report(report)
+        (message.webView?.navigationDelegate as? Tab)?.pageTint.report(report)
     }
 }

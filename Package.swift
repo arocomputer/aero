@@ -9,7 +9,7 @@ let package = Package(
             name: "Browser",
             path: "Sources",
             resources: [
-                .copy("Extensions/Extensions.html"), .copy("Settings/Settings.html"), .copy("Page/EdgeProbe.js"),
+                .copy("Extensions/Extensions.html"), .copy("Settings/Settings.html"), .copy("Page/PageTint.js"),
             ],
             swiftSettings: [.swiftLanguageMode(.v5)]),
         .testTarget(

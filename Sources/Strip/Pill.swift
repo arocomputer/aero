@@ -4,7 +4,7 @@ import AppKit
 /// site's icon when it has one, a hover tint, a close "×" on hover, and loading as a darker fill that
 /// sweeps left to right with `progress`. The title always leaves room for the close button, so hovering
 /// never reflows it.
-final class TabPillView: NSView, TabItem {
+final class Pill: NSView, TabItem {
     private(set) weak var tab: Tab?
     var title = "" {
         didSet {

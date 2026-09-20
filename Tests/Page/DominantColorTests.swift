@@ -16,7 +16,7 @@ private func edge(background: NSColor, logo: NSColor) -> CGImage {
 
 @Test func dominantColorIgnoresMinorityContentOnTheEdge() throws {
     let navy = NSColor(srgbRed: 0, green: 0.01, blue: 0.25, alpha: 1)
-    let color = try #require(EdgeColor.dominant(in: edge(background: navy, logo: .white)))
+    let color = try #require(DominantColor.of(edge(background: navy, logo: .white)))
     #expect(abs(color.redComponent - 0) < 0.02)
     #expect(abs(color.blueComponent - 0.25) < 0.02)
 }

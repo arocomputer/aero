@@ -66,7 +66,7 @@ final class DownloadItem: NSObject, WKDownloadDelegate {
         _ download: WKDownload, decideDestinationUsing response: URLResponse,
         suggestedFilename: String, completionHandler: @escaping (URL?) -> Void
     ) {
-        let directory = BrowserSettings.downloadDirectory
+        let directory = Settings.downloadDirectory
         let destination = DownloadDestination.availableURL(in: directory, suggestedFilename: suggestedFilename) {
             FileManager.default.fileExists(atPath: directory.appendingPathComponent($0).path)
         }

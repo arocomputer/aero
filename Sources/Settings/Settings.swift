@@ -2,7 +2,7 @@ import AppKit
 import Foundation
 
 /// The app-wide appearance Aero applies to its native interface and web views.
-enum BrowserAppearance: String, CaseIterable {
+enum Appearance: String, CaseIterable {
     case system
     case light
     case dark
@@ -59,14 +59,14 @@ enum SearchEngine: String, CaseIterable {
 }
 
 /// User-controlled browser behavior shared by the settings page, address field, and downloads.
-enum BrowserSettings {
+enum Settings {
     private static let searchEngineKey = "SearchEngine"
     private static let downloadDirectoryKey = "DownloadDirectory"
     private static let appearanceKey = "Appearance"
     private static let faviconsKey = "ShowFavicons"
 
-    static var appearance: BrowserAppearance {
-        get { BrowserAppearance(rawValue: UserDefaults.standard.string(forKey: appearanceKey) ?? "") ?? .system }
+    static var appearance: Appearance {
+        get { Appearance(rawValue: UserDefaults.standard.string(forKey: appearanceKey) ?? "") ?? .system }
         set {
             UserDefaults.standard.set(newValue.rawValue, forKey: appearanceKey)
             applyAppearance()

@@ -3,7 +3,7 @@ import WebKit
 
 /// WebExtensions in a window: the extensions menu, the catalog page's actions, and the window as the
 /// extension runtime sees it.
-extension BrowserWindowController {
+extension WindowController {
     /// Announces a fully constructed window and its tabs to the shared extension runtime.
     func registerWithExtensions() {
         guard !isRegisteredWithExtensions else { return }

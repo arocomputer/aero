@@ -4,28 +4,28 @@ import WebKit
 
 /// One browser window: the tab strip on top, the active tab's web view below, and the address field
 /// over it. Owns the tabs, pinned ones first; menu commands reach it through the responder chain.
-final class BrowserWindowController: NSWindowController, NSWindowDelegate, WKWebExtensionWindow {
+final class WindowController: NSWindowController, NSWindowDelegate, WKWebExtensionWindow {
     private(set) var tabs: [Tab] = []
     let downloads = Downloads()
     /// The tab whose page shows. Set only by `select`.
     private(set) var active: Tab?
     var onClose: (() -> Void)?
 
-    let strip = TabStripView()
+    let strip = Strip()
     private let content = NSView()
-    private let omnibox = OmniboxView()
-    private let browserMenu = BrowserMenuView()
-    private let find = FindView()
+    private let omnibox = Omnibox()
+    private let menuPanel = MenuPanel()
+    private let find = FindBar()
     private var scrollMonitor: Any?
     private var sleepTimer: Timer?
     weak var extensionActionAnchor: NSView?
-    private weak var browserMenuAnchor: NSView?
+    private weak var menuAnchor: NSView?
     /// Set by `registerWithExtensions`; until then the extension runtime is told nothing.
     var isRegisteredWithExtensions = false
 
     /// Opens a window with one tab: `url` if given, otherwise a blank tab with the address field focused.
     init(url: URL? = nil) {
-        let window = BrowserWindow(
+        let window = Window(
             contentRect: NSRect(x: 0, y: 0, width: 1280, height: 820),
             styleMask: [.titled, .closable, .miniaturizable, .resizable, .fullSizeContentView],
             backing: .buffered, defer: false)
@@ -45,7 +45,7 @@ final class BrowserWindowController: NSWindowController, NSWindowDelegate, WKWeb
         super.init(window: window)
         window.delegate = self
 
-        let root = RootView(strip: strip, content: content, omnibox: omnibox, browserMenu: browserMenu, find: find)
+        let root = RootView(strip: strip, content: content, omnibox: omnibox, menuPanel: menuPanel, find: find)
         window.contentView = root
         strip.controller = self
         downloads.onChange = { [weak self] in self?.downloadsDidChange() }
@@ -53,11 +53,11 @@ final class BrowserWindowController: NSWindowController, NSWindowDelegate, WKWeb
         omnibox.onNavigate = { [weak self] in self?.navigate(to: $0) }
         omnibox.onDismiss = { [weak self] in self?.dismissOmnibox() }
         omnibox.onTextChange = { [weak self] text in self?.active?.omniboxDraft = text }
-        browserMenu.onAction = { [weak self] in self?.performBrowserMenuAction($0) }
+        menuPanel.onAction = { [weak self] in self?.performMenuAction($0) }
 
         // Tells the tab the user is scrolling, so it holds off anything that would make the page stutter.
         scrollMonitor = NSEvent.addLocalMonitorForEvents(matching: .scrollWheel) { [weak self] event in
-            if let self, event.window === self.window { active?.edge.userIsScrolling() }
+            if let self, event.window === self.window { active?.pageTint.userIsScrolling() }
             return event
         }
 
@@ -65,7 +65,7 @@ final class BrowserWindowController: NSWindowController, NSWindowDelegate, WKWeb
         sleepTimer = Timer.scheduledTimer(withTimeInterval: 60, repeats: true) { [weak self] _ in self?.sleepIdleTabs() }
         sleepTimer?.tolerance = 30
 
-        tabs = Pins.urls.map { url in
+        tabs = PinnedTabs.urls.map { url in
             let tab = Tab(pinnedAt: url)
             tab.owner = self
             return tab
@@ -97,7 +97,7 @@ final class BrowserWindowController: NSWindowController, NSWindowDelegate, WKWeb
 
     func select(_ tab: Tab) {
         guard tab !== active else { return }
-        browserMenu.dismiss()
+        menuPanel.dismiss()
         find.dismiss()
         let previous = active
         active?.webView.removeFromSuperview()
@@ -116,7 +116,7 @@ final class BrowserWindowController: NSWindowController, NSWindowDelegate, WKWeb
             window?.makeFirstResponder(tab.webView)
         }
         tabDidChange(tab)
-        tab.edge.resume()
+        tab.pageTint.resume()
         if isRegisteredWithExtensions {
             WebExtensions.shared.controller.didActivateTab(tab, previousActiveTab: previous)
         }
@@ -170,22 +170,22 @@ final class BrowserWindowController: NSWindowController, NSWindowDelegate, WKWeb
         updateStrip()
         guard tab === active else { return }
         window?.title = tab.title
-        applyChrome(of: tab)
+        applyTint(of: tab)
     }
 
     /// Called by tabs when only their top edge changed, which happens continuously while scrolling.
-    func tabChromeDidChange(_ tab: Tab) {
-        if tab === active { applyChrome(of: tab) }
+    func tabTintDidChange(_ tab: Tab) {
+        if tab === active { applyTint(of: tab) }
     }
 
     /// Makes the chrome read as part of the tab's page: the strip takes the color along the page's top
     /// edge, the window behind takes the page's background, and strip and traffic lights are drawn light
     /// or dark to stay legible. This runs on every sample while scrolling, so it only touches what
     /// changed. The window's own appearance is left alone: pages take their color scheme from it.
-    private func applyChrome(of tab: Tab) {
+    private func applyTint(of tab: Tab) {
         guard let window else { return }
-        let color = tab.chromeColor
-        strip.show(pageColor: color, fading: tab.chromeFade)
+        let color = tab.tint
+        strip.setTint(color, fading: tab.tintFade)
 
         let background = tab.isBlank ? nil : tab.webView.underPageBackgroundColor
         if window.backgroundColor != background ?? .textBackgroundColor { window.backgroundColor = background ?? .textBackgroundColor }
@@ -215,22 +215,22 @@ final class BrowserWindowController: NSWindowController, NSWindowDelegate, WKWeb
 
     func updateStrip() {
         strip.update(tabs: tabs, active: active)
-        if browserMenu.isPresented { browserMenu.update(state: browserMenuState) }
+        if menuPanel.isPresented { menuPanel.update(state: menuState) }
     }
 
     /// Opens or closes the custom browser menu anchored beneath the right edge of the strip.
-    func toggleBrowserMenu(relativeTo view: NSView) {
-        browserMenuAnchor = view
-        if browserMenu.isPresented {
-            browserMenu.dismiss()
+    func toggleMenuPanel(relativeTo view: NSView) {
+        menuAnchor = view
+        if menuPanel.isPresented {
+            menuPanel.dismiss()
         } else {
             find.dismiss()
-            browserMenu.present(state: browserMenuState)
+            menuPanel.present(state: menuState)
         }
     }
 
-    private var browserMenuState: BrowserMenuState {
-        BrowserMenuState(
+    private var menuState: MenuState {
+        MenuState(
             isLoading: active?.webView.isLoading ?? false,
             hasPage: active?.isBlank == false,
             canPin: active?.isBlank == false,
@@ -239,7 +239,7 @@ final class BrowserWindowController: NSWindowController, NSWindowDelegate, WKWeb
             isFullScreen: window?.styleMask.contains(.fullScreen) ?? false)
     }
 
-    private func performBrowserMenuAction(_ action: BrowserMenuAction) {
+    private func performMenuAction(_ action: MenuAction) {
         switch action {
         case .newTab: newTab(nil)
         case .newWindow: (NSApp.delegate as? AppDelegate)?.newWindow(nil)
@@ -254,11 +254,11 @@ final class BrowserWindowController: NSWindowController, NSWindowDelegate, WKWeb
                 NSPasteboard.general.setString(url.absoluteString, forType: .string)
             }
         case .share:
-            if let url = active?.webView.url, let anchor = browserMenuAnchor {
+            if let url = active?.webView.url, let anchor = menuAnchor {
                 NSSharingServicePicker(items: [url]).show(relativeTo: anchor.bounds, of: anchor, preferredEdge: .maxY)
             }
         case .extensions:
-            if let anchor = browserMenuAnchor { showExtensions(relativeTo: anchor) }
+            if let anchor = menuAnchor { showExtensions(relativeTo: anchor) }
         case .settings: openSettings(nil)
         case .zoomOut: zoomOutPage(nil)
         case .resetZoom: resetPageZoom(nil)
@@ -266,7 +266,7 @@ final class BrowserWindowController: NSWindowController, NSWindowDelegate, WKWeb
         case .print: printPage(nil)
         case .toggleFullScreen: window?.toggleFullScreen(nil)
         }
-        if browserMenu.isPresented { browserMenu.update(state: browserMenuState) }
+        if menuPanel.isPresented { menuPanel.update(state: menuState) }
     }
 
     private func dismissOmnibox() {
@@ -276,18 +276,18 @@ final class BrowserWindowController: NSWindowController, NSWindowDelegate, WKWeb
         window?.makeFirstResponder(active.webView)
     }
 
-    // MARK: Pins
+    // MARK: PinnedTabs
 
-    /// Pins the tab at its current address, moving it to the end of the pinned tabs, or unpins it,
+    /// PinnedTabs the tab at its current address, moving it to the end of the pinned tabs, or unpins it,
     /// making it the first ordinary tab. Blank tabs can't be pinned.
     func setPinned(_ pinned: Bool, tab: Tab) {
         guard pinned != tab.isPinned, let index = tabs.firstIndex(where: { $0 === tab }) else { return }
         if pinned {
             guard let url = tab.webView.url else { return }
             tab.pinnedURL = url
-            Pins.urls.append(url)
+            PinnedTabs.urls.append(url)
         } else {
-            if let stored = Pins.urls.firstIndex(of: tab.pinnedURL!) { Pins.urls.remove(at: stored) }
+            if let stored = PinnedTabs.urls.firstIndex(of: tab.pinnedURL!) { PinnedTabs.urls.remove(at: stored) }
             tab.pinnedURL = nil
         }
         tabs.remove(at: index)
@@ -305,7 +305,7 @@ final class BrowserWindowController: NSWindowController, NSWindowDelegate, WKWeb
 
     @objc func openLocation(_ sender: Any?) {
         guard let active else { return }
-        browserMenu.dismiss()
+        menuPanel.dismiss()
         find.dismiss()
         let text = active.webView.url.map(AddressInput.display(for:)) ?? ""
         active.omniboxDraft = text
@@ -318,7 +318,7 @@ final class BrowserWindowController: NSWindowController, NSWindowDelegate, WKWeb
     @objc func goBackInHistory(_ sender: Any?) { active?.webView.goBack() }
     @objc func goForwardInHistory(_ sender: Any?) { active?.webView.goForward() }
     @objc func findPage(_ sender: Any?) {
-        browserMenu.dismiss()
+        menuPanel.dismiss()
         if let webView = active?.webView, active?.isBlank == false { find.present(for: webView) }
     }
     @objc func printPage(_ sender: Any?) {
@@ -340,7 +340,7 @@ final class BrowserWindowController: NSWindowController, NSWindowDelegate, WKWeb
         return true
     }
 
-    /// Pins the current tab, or unpins it if it already is.
+    /// PinnedTabs the current tab, or unpins it if it already is.
     @objc func togglePin(_ sender: Any?) {
         if let active { setPinned(!active.isPinned, tab: active) }
     }
@@ -363,7 +363,7 @@ final class BrowserWindowController: NSWindowController, NSWindowDelegate, WKWeb
     func windowShouldZoom(_ window: NSWindow, toFrame newFrame: NSRect) -> Bool {
         // AppKit can ask on the second mouse-up, after the clicked control has already changed the strip.
         guard let event = NSApp.currentEvent, event.clickCount >= 2 else { return true }
-        return (window as? BrowserWindow)?.firstClickAllowsZoom == true
+        return (window as? Window)?.firstClickAllowsZoom == true
             && strip.allowsWindowZoom(at: event.locationInWindow)
     }
 

@@ -4,15 +4,15 @@ import Testing
 import WebKit
 @testable import Browser
 
-/// Measures how often the probe names the color real pages show along their top edge. It loads each
-/// site in a web view that is never put on screen, at the top and scrolled, and compares the probe's
+/// Measures how often the script names the color real pages show along their top edge. It loads each
+/// site in a web view that is never put on screen, at the top and scrolled, and compares the script's
 /// answer with the dominant color of a snapshot of the top row. It needs the network and minutes, so
-/// it only runs when asked: `AERO_SURVEY=1 ./x test --filter edgeSurvey`. Add sites with
+/// it only runs when asked: `AERO_SURVEY=1 ./x test --filter tintSurvey`. Add sites with
 /// `AERO_SURVEY_SITES=a.com,b.com`.
 ///
 /// Read the result knowing what the snapshot cannot see off screen: it often leaves out sticky
 /// headers and content revealed by animation, and a thin accent stripe along the top counts as the
-/// "truth" though the probe rightly looks past it. A mismatch is a lead to look into, not a verdict.
+/// "truth" though the script rightly looks past it. A mismatch is a lead to look into, not a verdict.
 private let defaultSites = [
     "apple.com", "github.com", "zoah.com", "stripe.com", "linear.app", "vercel.com", "nytimes.com", "en.wikipedia.org",
     "youtube.com", "reddit.com", "amazon.com", "bbc.com", "theverge.com", "medium.com", "notion.so", "figma.com",
@@ -39,7 +39,7 @@ private func rgb(_ color: NSColor?) -> [Int]? {
     let configuration = WKSnapshotConfiguration()
     configuration.rect = CGRect(x: 0, y: 0, width: webView.bounds.width, height: 2)
     let image = try? await webView.takeSnapshot(configuration: configuration)
-    return rgb(image?.cgImage(forProposedRect: nil, context: nil, hints: nil).flatMap(EdgeColor.dominant))
+    return rgb(image?.cgImage(forProposedRect: nil, context: nil, hints: nil).flatMap(DominantColor.of))
 }
 
 /// "match", "pixels" when the app would turn to WebKit's sample or a snapshot, or what differed.
@@ -59,12 +59,12 @@ private func rgb(_ color: NSColor?) -> [Int]? {
     let reports = Reports()
     let configuration = WKWebViewConfiguration()
     configuration.websiteDataStore = .nonPersistent()
-    // A window that is never shown counts as hidden, and the probe lets a hidden page wait.
+    // A window that is never shown counts as hidden, and the script lets a hidden page wait.
     configuration.userContentController.addUserScript(
         WKUserScript(
             source: "Object.defineProperty(document, 'hidden', { get: () => false })",
             injectionTime: .atDocumentStart, forMainFrameOnly: true, in: .defaultClient))
-    EdgeChangeRouter.install(in: configuration.userContentController, handler: reports)
+    TintRouter.install(in: configuration.userContentController, handler: reports)
     configuration.applicationNameForUserAgent = "Version/26.0 Safari/605.1.15"
     let webView = WKWebView(frame: NSRect(x: 0, y: 0, width: 1280, height: 800), configuration: configuration)
     let window = NSWindow(contentRect: webView.frame, styleMask: [.borderless], backing: .buffered, defer: false)
@@ -83,7 +83,7 @@ private func rgb(_ color: NSColor?) -> [Int]? {
 }
 
 @MainActor @Test(.enabled(if: ProcessInfo.processInfo.environment["AERO_SURVEY"] != nil))
-func edgeSurvey() async {
+func tintSurvey() async {
     let extra = ProcessInfo.processInfo.environment["AERO_SURVEY_SITES"]?.split(separator: ",").map(String.init)
     let sites = extra ?? defaultSites
     var verdicts: [String] = []

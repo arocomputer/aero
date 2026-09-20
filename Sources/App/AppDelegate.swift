@@ -7,7 +7,7 @@ let appName = Bundle.main.object(forInfoDictionaryKey: "CFBundleName") as? Strin
 /// App entry point: owns the browser windows, builds the main menu, and opens URLs sent by other apps.
 @main
 final class AppDelegate: NSObject, NSApplicationDelegate, ASWebAuthenticationSessionWebBrowserSessionHandling {
-    private var windows: [BrowserWindowController] = []
+    private var windows: [WindowController] = []
     /// When the system runs short of memory, tabs hidden for a minute sleep without waiting out the half hour.
     private let memoryPressure = DispatchSource.makeMemoryPressureSource(eventMask: [.warning, .critical], queue: .main)
 
@@ -16,7 +16,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, ASWebAuthenticationSes
         let delegate = AppDelegate()
         NSApplication.shared.delegate = delegate
         NSApp.setActivationPolicy(.regular)
-        BrowserSettings.applyAppearance()
+        Settings.applyAppearance()
         NSWindow.allowsAutomaticWindowTabbing = false
         // Pages always get thumb-only overlay scrollbars. Left to the system setting, plugging in a mouse
         // switches to permanent scrollbars that sit in a boxed track. This only picks the scrollbar
@@ -50,8 +50,8 @@ final class AppDelegate: NSObject, NSApplicationDelegate, ASWebAuthenticationSes
     @objc func newWindow(_ sender: Any?) { openWindow(url: nil) }
 
     @discardableResult
-    func openWindow(url: URL?) -> BrowserWindowController {
-        let controller = BrowserWindowController(url: url)
+    func openWindow(url: URL?) -> WindowController {
+        let controller = WindowController(url: url)
         controller.onClose = { [weak self, weak controller] in self?.windows.removeAll { $0 === controller } }
         windows.append(controller)
         controller.showWindow(nil)

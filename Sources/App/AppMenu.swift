@@ -1,6 +1,6 @@
 import AppKit
 
-/// Builds Aero's native menu bar. Tab-number shortcuts stay on `BrowserWindow` so the Window menu
+/// Builds Aero's native menu bar. Tab-number shortcuts stay on `Window` so the Window menu
 /// contains only window commands and the system-managed list of open windows.
 enum AppMenu {
     static func make() -> NSMenu {
@@ -27,7 +27,7 @@ enum AppMenu {
             [
                 item("About \(appName)", #selector(NSApplication.orderFrontStandardAboutPanel(_:)), ""),
                 .separator(),
-                item("Settings…", #selector(BrowserWindowController.openSettings(_:)), ","),
+                item("Settings…", #selector(WindowController.openSettings(_:)), ","),
                 .separator(),
                 item("Hide \(appName)", #selector(NSApplication.hide(_:)), "h"),
                 item("Hide Others", #selector(NSApplication.hideOtherApplications(_:)), "h", [.command, .option]),
@@ -37,15 +37,15 @@ enum AppMenu {
         menu(
             "File",
             [
-                item("New Tab", #selector(BrowserWindowController.newTab(_:)), "t"),
+                item("New Tab", #selector(WindowController.newTab(_:)), "t"),
                 item("New Window", #selector(AppDelegate.newWindow(_:)), "n"),
-                item("Open Location", #selector(BrowserWindowController.openLocation(_:)), "l"),
+                item("Open Location", #selector(WindowController.openLocation(_:)), "l"),
                 .separator(),
                 item("Install Extension...", #selector(AppDelegate.installExtension(_:)), ""),
                 .separator(),
-                item("Print", #selector(BrowserWindowController.printPage(_:)), "p"),
+                item("Print", #selector(WindowController.printPage(_:)), "p"),
                 .separator(),
-                item("Close Tab", #selector(BrowserWindowController.closeTab(_:)), "w"),
+                item("Close Tab", #selector(WindowController.closeTab(_:)), "w"),
                 item("Close Window", #selector(NSWindow.performClose(_:)), "w", [.command, .shift]),
             ])
         menu(
@@ -59,26 +59,26 @@ enum AppMenu {
                 item("Paste", #selector(NSText.paste(_:)), "v"),
                 item("Select All", #selector(NSText.selectAll(_:)), "a"),
                 .separator(),
-                item("Find", #selector(BrowserWindowController.findPage(_:)), "f"),
+                item("Find", #selector(WindowController.findPage(_:)), "f"),
             ])
         menu(
             "View",
             [
-                item("Reload", #selector(BrowserWindowController.reloadPage(_:)), "r"),
-                item("Stop", #selector(BrowserWindowController.stopLoadingPage(_:)), "."),
+                item("Reload", #selector(WindowController.reloadPage(_:)), "r"),
+                item("Stop", #selector(WindowController.stopLoadingPage(_:)), "."),
                 .separator(),
-                item("Actual Size", #selector(BrowserWindowController.resetPageZoom(_:)), "0"),
-                item("Zoom In", #selector(BrowserWindowController.zoomInPage(_:)), "+"),
-                item("Zoom Out", #selector(BrowserWindowController.zoomOutPage(_:)), "-"),
+                item("Actual Size", #selector(WindowController.resetPageZoom(_:)), "0"),
+                item("Zoom In", #selector(WindowController.zoomInPage(_:)), "+"),
+                item("Zoom Out", #selector(WindowController.zoomOutPage(_:)), "-"),
                 .separator(),
-                item("Pin or Unpin Tab", #selector(BrowserWindowController.togglePin(_:)), "d"),
+                item("Pin or Unpin Tab", #selector(WindowController.togglePin(_:)), "d"),
                 item("Enter Full Screen", #selector(NSWindow.toggleFullScreen(_:)), "f", [.command, .control]),
             ])
         menu(
             "History",
             [
-                item("Back", #selector(BrowserWindowController.goBackInHistory(_:)), "["),
-                item("Forward", #selector(BrowserWindowController.goForwardInHistory(_:)), "]"),
+                item("Back", #selector(WindowController.goBackInHistory(_:)), "["),
+                item("Forward", #selector(WindowController.goForwardInHistory(_:)), "]"),
             ])
         menu(
             "Window",

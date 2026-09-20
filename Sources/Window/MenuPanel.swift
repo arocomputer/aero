@@ -1,7 +1,7 @@
 import AppKit
 
 /// The state needed to label and enable the browser menu for the active tab.
-struct BrowserMenuState {
+struct MenuState {
     let isLoading: Bool
     let hasPage: Bool
     let canPin: Bool
@@ -11,7 +11,7 @@ struct BrowserMenuState {
 }
 
 /// Commands exposed by the browser menu. Zoom commands keep the menu open; the rest dismiss it.
-enum BrowserMenuAction {
+enum MenuAction {
     case newTab
     case newWindow
     case openLocation
@@ -30,27 +30,27 @@ enum BrowserMenuAction {
 }
 
 /// A rounded browser menu drawn inside the window so it matches the omnibox cards exactly.
-final class BrowserMenuView: NSView {
-    var onAction: ((BrowserMenuAction) -> Void)?
+final class MenuPanel: NSView {
+    var onAction: ((MenuAction) -> Void)?
     var trailingInset: CGFloat = 14 { didSet { if trailingInset != oldValue { needsLayout = true } } }
 
     private let card = CardView()
     private let scroll = NSScrollView()
-    private let content = BrowserMenuContentView()
-    private let newTab = BrowserMenuRow(symbol: "plus", title: "New Tab", shortcut: "⌘T")
-    private let newWindow = BrowserMenuRow(symbol: "macwindow.badge.plus", title: "New Window", shortcut: "⌘N")
-    private let openLocation = BrowserMenuRow(symbol: "magnifyingglass", title: "Open Location", shortcut: "⌘L")
-    private let find = BrowserMenuRow(symbol: "text.magnifyingglass", title: "Find on Page", shortcut: "⌘F")
-    private let reload = BrowserMenuRow(symbol: "arrow.clockwise", title: "Reload", shortcut: "⌘R")
-    private let pin = BrowserMenuRow(symbol: "pin", title: "Pin Tab", shortcut: "⌘D")
-    private let copyLink = BrowserMenuRow(symbol: "link", title: "Copy Page Link", shortcut: "")
-    private let share = BrowserMenuRow(symbol: "square.and.arrow.up", title: "Share Page", shortcut: "")
-    private let extensions = BrowserMenuRow(symbol: "square.grid.2x2", title: "Extensions", shortcut: "")
-    private let settings = BrowserMenuRow(symbol: "gearshape", title: "Settings", shortcut: "⌘,")
-    private let zoom = BrowserMenuZoomRow()
-    private let printPage = BrowserMenuRow(symbol: "printer", title: "Print", shortcut: "⌘P")
-    private let fullScreen = BrowserMenuRow(symbol: "arrow.up.left.and.arrow.down.right", title: "Enter Full Screen", shortcut: "⌃⌘F")
-    private let separators = [BrowserMenuSeparator(), BrowserMenuSeparator(), BrowserMenuSeparator(), BrowserMenuSeparator()]
+    private let content = MenuContent()
+    private let newTab = MenuRow(symbol: "plus", title: "New Tab", shortcut: "⌘T")
+    private let newWindow = MenuRow(symbol: "macwindow.badge.plus", title: "New Window", shortcut: "⌘N")
+    private let openLocation = MenuRow(symbol: "magnifyingglass", title: "Open Location", shortcut: "⌘L")
+    private let find = MenuRow(symbol: "text.magnifyingglass", title: "Find on Page", shortcut: "⌘F")
+    private let reload = MenuRow(symbol: "arrow.clockwise", title: "Reload", shortcut: "⌘R")
+    private let pin = MenuRow(symbol: "pin", title: "Pin Tab", shortcut: "⌘D")
+    private let copyLink = MenuRow(symbol: "link", title: "Copy Page Link", shortcut: "")
+    private let share = MenuRow(symbol: "square.and.arrow.up", title: "Share Page", shortcut: "")
+    private let extensions = MenuRow(symbol: "square.grid.2x2", title: "Extensions", shortcut: "")
+    private let settings = MenuRow(symbol: "gearshape", title: "Settings", shortcut: "⌘,")
+    private let zoom = MenuZoomRow()
+    private let printPage = MenuRow(symbol: "printer", title: "Print", shortcut: "⌘P")
+    private let fullScreen = MenuRow(symbol: "arrow.up.left.and.arrow.down.right", title: "Enter Full Screen", shortcut: "⌃⌘F")
+    private let separators = [MenuSeparator(), MenuSeparator(), MenuSeparator(), MenuSeparator()]
 
     override init(frame: NSRect) {
         super.init(frame: frame)
@@ -89,7 +89,7 @@ final class BrowserMenuView: NSView {
     var isPresented: Bool { !isHidden }
 
     /// Opens the menu with labels and controls reflecting the current tab and window.
-    func present(state: BrowserMenuState) {
+    func present(state: MenuState) {
         update(state: state)
         isHidden = false
         alphaValue = 0
@@ -103,7 +103,7 @@ final class BrowserMenuView: NSView {
     }
 
     /// Refreshes dynamic labels while leaving an open menu in place.
-    func update(state: BrowserMenuState) {
+    func update(state: MenuState) {
         reload.set(symbol: state.isLoading ? "xmark" : "arrow.clockwise", title: state.isLoading ? "Stop Loading" : "Reload")
         reload.isEnabled = state.hasPage
         find.isEnabled = state.hasPage
@@ -177,19 +177,19 @@ final class BrowserMenuView: NSView {
         if !card.frame.contains(convert(event.locationInWindow, from: nil)) { dismiss() }
     }
 
-    private func choose(_ action: BrowserMenuAction) {
+    private func choose(_ action: MenuAction) {
         dismiss()
         onAction?(action)
     }
 }
 
 /// Keeps the browser menu's rows laid out from top to bottom inside its scroll view.
-private final class BrowserMenuContentView: NSView {
+private final class MenuContent: NSView {
     override var isFlipped: Bool { true }
 }
 
 /// One icon, label and shortcut in the browser menu.
-private final class BrowserMenuRow: NSView {
+private final class MenuRow: NSView {
     var onClick: (() -> Void)?
     var isEnabled = true { didSet { if isEnabled != oldValue { needsDisplay = true } } }
 
@@ -255,8 +255,8 @@ private final class BrowserMenuRow: NSView {
 }
 
 /// The compact minus, percentage and plus control in the browser menu.
-private final class BrowserMenuZoomRow: NSView {
-    var onAction: ((BrowserMenuAction) -> Void)?
+private final class MenuZoomRow: NSView {
+    var onAction: ((MenuAction) -> Void)?
     var value: CGFloat = 1 { didSet { percentage.title = "\(Int((value * 100).rounded()))%" } }
 
     private let label = NSTextField(labelWithString: "Zoom")
@@ -300,7 +300,7 @@ private final class BrowserMenuZoomRow: NSView {
 }
 
 /// A one-pixel division between groups in the browser menu.
-private final class BrowserMenuSeparator: NSView {
+private final class MenuSeparator: NSView {
     override init(frame: NSRect) {
         super.init(frame: frame)
         wantsLayer = true

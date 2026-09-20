@@ -26,39 +26,40 @@
 // never counts, since a snapshot could not tell its part of the edge from the rest.
 //
 // Asking where elements are makes the page bring its layout up to date, which is real work on a
-// busy page, so probing is kept rare. Load, resize and scroll probe at most ten times a second,
-// and once more shortly after the last of them to catch a header that was still fading. While
-// scrolling, each frame also takes a glance, one hit test and a few style reads, and probes at
-// once if it differs, so a header restyled by the page's scroll handler and the strip change in
-// the same frame. A transition is read for where it is going: the report ends in
-// "~<ms>,<easing>", the fade the page is making, and the strip makes the same one. The start of a transition on
-// an element of the last probe probes at once, and the end of any on a property that can change
-// the edge probes once. Pages also change with no
-// such event: a client-rendered header arrives late, a route or theme changes. Those follow a
-// moment that is known: the load, a click, a key, a change of the system's color scheme, a return
-// from the back-forward cache, or `aeroEdgeProbe()`, which the native side calls when the address
-// changes without a new page. Each such moment is followed by a second of glances, one a frame
-// (three seconds as a page first appears), and by five probes spread over eight seconds, and then
-// nothing until the next one, so an idle page is never probed and a hidden one waits until it is
-// shown. A probe of a page whose layout is up to date took 0.07ms on a page of
-// 20,000 elements. A mutation observer would notice more, but measured on the same page it nearly
-// doubled the cost of a burst of DOM changes, so there is none. It never listens to animations
-// either; a page full of them would be probed on every frame.
+// busy page, so a full read is kept rare. Load, resize and scroll read at most ten times a second,
+// and once more shortly after the last of them to catch a header that was still fading. Around
+// the moments a page can change, each frame also takes a glance, one hit test and a few style
+// reads, and a full read follows at once if it differs, so a header restyled by the page's scroll
+// handler and the strip change in the same frame. A transition is read for where it is going: the
+// report ends in "~<ms>,<easing>", the fade the page is making, and the strip makes the same one.
+// The start of a transition on an element of the last read is read at once, and the end of any on
+// a property that can change the edge is read once.
+//
+// Pages also change with no such event: a client-rendered header arrives late, a route or theme
+// changes. Those follow a moment that is known: the load, a click, a key, a change of the system's
+// color scheme, a return from the back-forward cache, or `aeroReadTint()`, which the native side
+// calls when the address changes without a new page. Each such moment is followed by a second of
+// glances, one a frame (three seconds as a page first appears), and by five reads spread over
+// eight seconds, and then nothing until the next one, so an idle page is never read and a hidden
+// one waits until it is shown. A read of a page whose layout is up to date took 0.07ms on a page
+// of 20,000 elements, a glance 0.007ms. A mutation observer would notice more, but measured on the
+// same page it nearly doubled the cost of a burst of DOM changes, so there is none. It never
+// listens to animations either; a page full of them would be read on every frame.
 //
 // The script runs in the isolated client world, where the page's own scripts can neither see it
 // nor send reports in its name.
 //
-// Reports go to the message handler named "edge"; see EdgeChangeRouter in PageEdge.swift.
+// Reports go to the message handler named "tint"; see TintRouter in PageTint.swift.
 (() => {
     const painted = /^(IMG|VIDEO|CANVAS|PICTURE|SVG|IFRAME|EMBED|OBJECT)$/i;
     const edgeProperty = /^(background|opacity|transform|visibility|height|top)/;
     const blurred = /blur\((?!0(px)?\))/;
     const numbers = new WeakMap(), parsed = new Map();
     let pinned = new WeakMap(), pixel;
-    let last, count = 0, probeTimer = 0, settleTimer = 0, probedAt = 0;
-    // What the last probe walked through, and what those looked like, for `glance`.
+    let last, count = 0, readTimer = 0, settleTimer = 0, readAt = 0;
+    // What the last read walked through, and what those looked like, for `glance`.
     let touched = new Set(), touchedPseudo = [], watched = [], watchedPseudo = [], seen = '', frame = 0;
-    // The longest transition met by the current probe, and its easing.
+    // The longest transition met by the current read, and its easing.
     let glide = 0, easing = 'ease';
     // Until when every frame takes a glance; see `watchFrames`.
     let watchUntil = 0;
@@ -75,7 +76,7 @@
     // take, lets the strip set off for the same color at the same moment and arrive together.
     // A pseudo-element's transitions are listed with its element's subtree, so they are asked for
     // only where a pseudo-element paints: sites often fade a header in as its `::after`.
-    function heading(element, pseudo) {
+    function fadeTarget(element, pseudo) {
         const to = {};
         if (!element.getAnimations) return to;
         for (const animation of pseudo ? element.getAnimations({ subtree: true }) : element.getAnimations()) {
@@ -214,7 +215,7 @@
         // Adds one layer, `pseudo` naming the pseudo-element when it is one. Returns the result when
         // the walk ends at it.
         const paint = (element, style, isPaintedTag, inFront, pseudo) => {
-            const to = heading(element, pseudo);
+            const to = fadeTarget(element, pseudo);
             if (pseudo) touchedPseudo.push([element, pseudo]); else touched.add(element);
             const opacity = to.opacity ?? Number(style.opacity);
             if (opacity === 0) return null;
@@ -277,10 +278,10 @@
 
     // What is pinned is looked up afresh each time: a header that only becomes fixed once the
     // page scrolls must not stay remembered as loose.
-    function probe() {
-        clearTimeout(probeTimer);
-        probeTimer = 0;
-        probedAt = performance.now();
+    function read() {
+        clearTimeout(readTimer);
+        readTimer = 0;
+        readAt = performance.now();
         pinned = new WeakMap();
         touched = new Set();
         touchedPseudo = [];
@@ -298,17 +299,17 @@
         // A page still being parsed has not said what it looks like yet; "page" would only make the
         // strip flash the background before the header arrives.
         if (answer === 'page' && document.readyState === 'loading') answer = last;
-        // "~<ms>,<easing>" is the fade the page is making to get there; see `heading`.
-        if (answer !== last) webkit.messageHandlers.edge.postMessage(glide > 20 ? answer + '~' + Math.round(glide) + ',' + easing : answer);
+        // "~<ms>,<easing>" is the fade the page is making to get there; see `fadeTarget`.
+        if (answer !== last) webkit.messageHandlers.tint.postMessage(glide > 20 ? answer + '~' + Math.round(glide) + ',' + easing : answer);
         last = answer;
         watched = [...touched].slice(0, 12);
         watchedPseudo = touchedPseudo.slice(0, 6);
         seen = glance();
     }
 
-    // What a full probe would most likely answer differently about, cheaply enough to ask every
+    // What a full read would most likely answer differently about, cheaply enough to ask every
     // frame of a scroll: which elements are at the middle of the edge, and the styles of the ones
-    // the last probe walked through. A running transition reads as one state, not sixty.
+    // the last read walked through. A running transition counts as one state, not sixty.
     function glance() {
         return document.elementsFromPoint(innerWidth >> 1, 1).slice(0, 6).map(number).join(',') + '|' + watched.map(element => {
             const style = getComputedStyle(element), moving = element.getAnimations ? element.getAnimations().length : 0;
@@ -329,24 +330,24 @@
 
     function tick() {
         frame = 0;
-        if (glance() !== seen) probe();
+        if (glance() !== seen) read();
         if (performance.now() < watchUntil) frame = requestAnimationFrame(tick);
     }
 
     function request(settle) {
-        if (!probeTimer) probeTimer = setTimeout(probe, Math.max(0, 100 - (performance.now() - probedAt)));
+        if (!readTimer) readTimer = setTimeout(read, Math.max(0, 100 - (performance.now() - readAt)));
         if (!settle) return;
         clearTimeout(settleTimer);
-        settleTimer = setTimeout(probe, 400);
+        settleTimer = setTimeout(read, 400);
     }
 
     // Something happened that pages answer by changing, a little later and with no event.
-    function attend() {
+    function expectChange() {
         listenLast();
         watchFrames(1000);
         followUps.forEach(clearTimeout);
         followUps = [300, 1000, 2000, 4000, 8000].map(delay => setTimeout(() => {
-            if (document.hidden) missed = true; else probe();
+            if (document.hidden) missed = true; else read();
         }, delay));
     }
 
@@ -367,22 +368,22 @@
     }
     listenLast();
     document.addEventListener('scroll', afterScroll, { passive: true, capture: true });
-    // The start of a transition on something the last probe walked through: read where it is going.
+    // The start of a transition on something the last read walked through: read where it is going.
     addEventListener('transitionrun', event => {
-        if (edgeProperty.test(event.propertyName) && watched.includes(event.target)) probe();
+        if (edgeProperty.test(event.propertyName) && watched.includes(event.target)) read();
     }, true);
     for (const type of ['load', 'DOMContentLoaded'])
-        addEventListener(type, () => { request(true); attend(); }, { passive: true, capture: true });
+        addEventListener(type, () => { request(true); expectChange(); }, { passive: true, capture: true });
     for (const type of ['pointerdown', 'keydown'])
-        addEventListener(type, attend, { passive: true, capture: true });
-    matchMedia('(prefers-color-scheme: dark)').addEventListener('change', attend);
+        addEventListener(type, expectChange, { passive: true, capture: true });
+    matchMedia('(prefers-color-scheme: dark)').addEventListener('change', expectChange);
     addEventListener('transitionend', event => { if (edgeProperty.test(event.propertyName)) request(false); }, true);
     // A page brought back from the back-forward cache keeps `last`, but the strip starts over.
-    addEventListener('pageshow', event => { if (event.persisted) { last = undefined; request(true); attend(); } });
+    addEventListener('pageshow', event => { if (event.persisted) { last = undefined; request(true); expectChange(); } });
     document.addEventListener('visibilitychange', () => {
-        if (!document.hidden && missed) { missed = false; attend(); }
+        if (!document.hidden && missed) { missed = false; expectChange(); }
     });
-    globalThis.aeroEdgeProbe = () => { request(true); attend(); };
+    globalThis.aeroReadTint = () => { request(true); expectChange(); };
     // The first frames of a page decide what the strip shows as it appears.
     watchFrames(3000);
 })();

@@ -2,7 +2,7 @@ import AppKit
 import WebKit
 
 /// A compact find bar that searches the current web view without injecting code into the page.
-final class FindView: NSView, NSSearchFieldDelegate {
+final class FindBar: NSView, NSSearchFieldDelegate {
     var trailingInset: CGFloat = 14 { didSet { if trailingInset != oldValue { needsLayout = true } } }
     private let card = CardView()
     private let field = NSSearchField()

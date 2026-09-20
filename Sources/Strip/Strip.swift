@@ -5,25 +5,25 @@ import AppKit
 /// shows while the pointer is over the strip. Laid out by hand; empty areas drag the window.
 /// Changes to the tabs animate: the active highlight slides between items, new ones slide in, the rest make room.
 /// It has no surface of its own: it shows the color along the page's top edge, and its `appearance`
-/// is set light or dark to stay legible on it. See `show(pageColor:fading:)`.
-final class TabStripView: NSView {
-    weak var controller: BrowserWindowController?
+/// is set light or dark to stay legible on it. See `setTint(_:fading:)`.
+final class Strip: NSView {
+    weak var controller: WindowController?
     /// Space reserved on the left for the traffic lights.
     var leadingInset: CGFloat = 86 { didSet { if leadingInset != oldValue { needsLayout = true } } }
     /// Matches the right controls to the close button's distance from the opposite window edge.
     var trailingInset: CGFloat = 14 { didSet { if trailingInset != oldValue { needsLayout = true } } }
 
-    /// The color along the page's top edge, shown behind the strip; see `show(pageColor:fading:)`.
-    private var pageColor: NSColor?
+    /// The color along the page's top edge, shown behind the strip; see `setTint(_:fading:)`.
+    private var tint: NSColor?
 
-    private var pinButtons: [PinButton] = []
-    private var pills: [TabPillView] = []
+    private var pins: [Pin] = []
+    private var pills: [Pill] = []
     private var entering: [NSView] = []
     private var activeItem: NSView?
     /// What the last animated arrangement was made for; see `update`.
     private var arranged: Arrangement?
-    private let highlight = TintView(opacity: 0.08, radius: StripMetrics.radius)
-    private let separator = TintView(opacity: 0.14, radius: 0)
+    private let highlight = Shade(opacity: 0.08, radius: StripMetrics.radius)
+    private let separator = Shade(opacity: 0.14, radius: 0)
     private let backButton = StripButton(symbol: "chevron.backward", pointSize: 14, weight: .medium)
     private let forwardButton = StripButton(symbol: "chevron.forward", pointSize: 14, weight: .medium)
     private let reloadButton = StripButton(symbol: "arrow.clockwise", pointSize: 13, weight: .medium)
@@ -64,7 +64,7 @@ final class TabStripView: NSView {
         menuButton.toolTip = "\(appName) Menu"
         menuButton.onClick = { [weak self] in
             guard let self else { return }
-            controller?.toggleBrowserMenu(relativeTo: menuButton)
+            controller?.toggleMenuPanel(relativeTo: menuButton)
         }
         addSubview(menuButton)
         addTrackingArea(
@@ -90,9 +90,9 @@ final class TabStripView: NSView {
     /// once is shown at once, with nothing added: the report leaves the page before the frame it
     /// describes does, so setting the color here puts both on the same refresh, and any softening
     /// would be lag.
-    func show(pageColor color: NSColor?, fading: PageEdge.Fade?) {
-        guard color != pageColor else { return }
-        pageColor = color
+    func setTint(_ color: NSColor?, fading: PageTint.Fade?) {
+        guard color != tint else { return }
+        tint = color
         guard let fading else {
             CATransaction.begin()
             CATransaction.setDisableActions(true)
@@ -115,14 +115,14 @@ final class TabStripView: NSView {
     func update(tabs: [Tab], active: Tab?) {
         var pinned: [Tab] = [], ordinary: [Tab] = []
         for tab in tabs { if tab.isPinned { pinned.append(tab) } else { ordinary.append(tab) } }
-        pinButtons = matched(pinButtons, to: pinned) { [weak self] tab in
-            let button = PinButton(tab: tab)
+        pins = matched(pins, to: pinned) { [weak self] tab in
+            let button = Pin(tab: tab)
             button.onSelect = { [weak self, weak tab] in tab.map { self?.controller?.select($0) } }
             button.onUnpin = { [weak self, weak tab] in tab.map { self?.controller?.setPinned(false, tab: $0) } }
             return button
         }
         pills = matched(pills, to: ordinary) { [weak self] tab in
-            let pill = TabPillView(tab: tab)
+            let pill = Pill(tab: tab)
             pill.onSelect = { [weak self, weak tab] in tab.map { self?.controller?.select($0) } }
             pill.onClose = { [weak self, weak tab] in tab.map { self?.controller?.close($0) } }
             pill.onPin = { [weak self, weak tab] in tab.map { self?.controller?.setPinned(true, tab: $0) } }
@@ -133,7 +133,7 @@ final class TabStripView: NSView {
         forwardButton.isEnabled = active?.webView.canGoForward ?? false
         reloadButton.isEnabled = active?.isBlank == false
 
-        for (button, tab) in zip(pinButtons, pinned) {
+        for (button, tab) in zip(pins, pinned) {
             button.letter = tab.monogram
             button.icon = tab.favicon
             button.title = tab.title
@@ -150,7 +150,7 @@ final class TabStripView: NSView {
             if tab === active { activeItem = pill }
         }
         let arrangement = Arrangement(
-            pins: pinButtons.count, pills: pills.count, active: activeItem.map(ObjectIdentifier.init),
+            pins: pins.count, pills: pills.count, active: activeItem.map(ObjectIdentifier.init),
             leading: leadingInset, trailing: trailingInset, width: bounds.width, showsDownloads: showsDownloads)
         if arrangement != arranged || !entering.isEmpty {
             arranged = arrangement
@@ -196,11 +196,11 @@ final class TabStripView: NSView {
             x += StripMetrics.arrowSize + 2
         }
         x += 8
-        for button in pinButtons {
+        for button in pins {
             targets.append((button, NSRect(x: x, y: y, width: StripMetrics.pinWidth, height: StripMetrics.itemHeight)))
             x += StripMetrics.pinWidth + StripMetrics.gap
         }
-        if !pinButtons.isEmpty { x += 4 }
+        if !pins.isEmpty { x += 4 }
 
         var trailingStart = bounds.width - trailingInset - StripMetrics.itemHeight
         if showsDownloads { trailingStart -= StripMetrics.itemHeight + 4 }
@@ -265,7 +265,7 @@ protocol TabItem: NSView {
 
 /// A flat tint of the strip's text color that follows the strip's light or dark appearance: the active
 /// tab's background, which slides between items, and the hairline after the traffic lights.
-private final class TintView: NSView {
+private final class Shade: NSView {
     private let opacity: CGFloat
 
     init(opacity: CGFloat, radius: CGFloat) {

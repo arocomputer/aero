@@ -4,7 +4,7 @@ import WebKit
 
 /// One browser tab. Owns its web view, records visits to history, and tells its window controller
 /// whenever title, URL or loading state change. A tab is "blank" until its first navigation.
-/// Its `chromeColor` follows what the page shows along its top edge.
+/// Its `tint` follows what the page shows along its top pageTint.
 /// A pinned tab shows as its site's icon or a monogram in the strip, can't be closed, and comes back
 /// on the next launch.
 /// A tab nobody has looked at for `sleepAfter` goes to sleep: it gives up its page, and with it the
@@ -12,7 +12,7 @@ import WebKit
 final class Tab: NSObject, WKNavigationDelegate, WKUIDelegate, WKWebExtensionTab {
     /// Replaced by a fresh, idle one while the tab sleeps; see `sleepIfIdle`.
     private(set) var webView: WKWebView
-    weak var owner: BrowserWindowController?
+    weak var owner: WindowController?
     private(set) var isBlank: Bool
     /// Text left unfinished in this tab's address field. The window reuses one field across tabs.
     var omniboxDraft = ""
@@ -47,14 +47,14 @@ final class Tab: NSObject, WKNavigationDelegate, WKUIDelegate, WKWebExtensionTab
     /// Set while a reload is being hidden; see `reload`.
     private var reloadHold: ReloadHold?
 
-    /// What `chromeColor` last was, shown while a new page has yet to report; nil after a blank tab.
-    private var lastChrome: NSColor?
+    /// What `tint` last was, shown while a new page has yet to report; nil after a blank tab.
+    private var lastTint: NSColor?
 
     /// The host of the page last committed, to tell moving within a site from leaving it.
     private var committedHost: String?
 
-    /// Follows what the page shows along its top edge, for `chromeColor`.
-    private(set) lazy var edge = PageEdge(
+    /// Follows what the page shows along its top edge, for `tint`.
+    private(set) lazy var pageTint = PageTint(
         isLoading: { [weak self] in self?.webView.isLoading ?? false },
         isShown: { [weak self] in self?.webView.window != nil && (self?.webView.bounds.width ?? 0) > 0 },
         snapshot: { [weak self] done in
@@ -63,10 +63,10 @@ final class Tab: NSObject, WKNavigationDelegate, WKUIDelegate, WKWebExtensionTab
             configuration.rect = CGRect(x: 0, y: 0, width: webView.bounds.width, height: 2)
             configuration.afterScreenUpdates = false
             webView.takeSnapshot(with: configuration) { image, _ in
-                done(image?.cgImage(forProposedRect: nil, context: nil, hints: nil).flatMap(EdgeColor.dominant))
+                done(image?.cgImage(forProposedRect: nil, context: nil, hints: nil).flatMap(DominantColor.of))
             }
         },
-        onChange: { [weak self] in self.map { $0.owner?.tabChromeDidChange($0) } })
+        onChange: { [weak self] in self.map { $0.owner?.tabTintDidChange($0) } })
 
     /// Pass the configuration WebKit hands to `createWebViewWith` for pages opened by script;
     /// such tabs are never blank because WebKit starts their load itself.
@@ -138,7 +138,7 @@ final class Tab: NSObject, WKNavigationDelegate, WKUIDelegate, WKWebExtensionTab
     /// own, so moving within a host keeps the current icon until the new page declares its own.
     private func showRememberedFavicon(for url: URL?) {
         let isWeb = ["http", "https"].contains(url?.scheme?.lowercased() ?? "")
-        let host = BrowserSettings.showsFavicons && isWeb ? url?.host?.lowercased() : nil
+        let host = Settings.showsFavicons && isWeb ? url?.host?.lowercased() : nil
         guard host != faviconHost else { return }
         faviconHost = host
         favicon = host == nil ? nil : Favicons.shared.icon(for: url)
@@ -146,13 +146,13 @@ final class Tab: NSObject, WKNavigationDelegate, WKUIDelegate, WKWebExtensionTab
 
     /// Asks the loaded page which icons it declares and shows the best one once it is fetched.
     private func loadFavicon() {
-        guard BrowserSettings.showsFavicons, let page = webView.url, ["http", "https"].contains(page.scheme?.lowercased() ?? "")
+        guard Settings.showsFavicons, let page = webView.url, ["http", "https"].contains(page.scheme?.lowercased() ?? "")
         else { return }
         webView.callAsyncJavaScript(Favicons.declaredScript, arguments: [:], in: nil, in: .defaultClient) { [weak self] result in
             let declared = Favicons.declared(from: try? result.get())
             Task { @MainActor in
                 guard let image = await Favicons.shared.load(declared: declared, page: page),
-                    let self, BrowserSettings.showsFavicons, self.webView.url?.host == page.host, self.favicon !== image
+                    let self, Settings.showsFavicons, self.webView.url?.host == page.host, self.favicon !== image
                 else { return }
                 self.favicon = image
                 self.changed()
@@ -223,17 +223,17 @@ final class Tab: NSObject, WKNavigationDelegate, WKUIDelegate, WKWebExtensionTab
     /// Until the first sample of a page arrives it is the page's background color. Deliberately never the
     /// declared theme color, which sites often set to a brand color that matches nothing under the strip.
     /// Nil while the tab is blank.
-    var chromeColor: NSColor? {
-        if let reloadHold { return reloadHold.chromeColor }
+    var tint: NSColor? {
+        if let reloadHold { return reloadHold.tint }
         if isBlank { return nil }
         // A page that has only just committed has not said what it shows; stay as we were.
-        if edge.isWaiting { return lastChrome }
-        lastChrome = edge.color ?? webView.underPageBackgroundColor?.withAlphaComponent(1)
-        return lastChrome
+        if pageTint.isWaiting { return lastTint }
+        lastTint = pageTint.color ?? webView.underPageBackgroundColor?.withAlphaComponent(1)
+        return lastTint
     }
 
-    /// The fade the page's own header is making to `chromeColor`, for the strip to make with it.
-    var chromeFade: PageEdge.Fade? { reloadHold == nil && edge.isFromStyles ? edge.fade : nil }
+    /// The fade the page's own header is making to `tint`, for the strip to make with it.
+    var tintFade: PageTint.Fade? { reloadHold == nil && pageTint.isFromStyles ? pageTint.fade : nil }
 
     /// Reloads the page so that nothing appears to move, and the strip keeps its color meanwhile; see
     /// `ReloadHold`. A tab that is hidden or has no page reloads plainly.
@@ -242,9 +242,9 @@ final class Tab: NSObject, WKNavigationDelegate, WKUIDelegate, WKWebExtensionTab
         let release = { [weak self] in
             guard let self else { return }
             reloadHold = nil
-            owner?.tabChromeDidChange(self)
+            owner?.tabTintDidChange(self)
         }
-        ReloadHold.begin(in: webView, chromeColor: chromeColor, onEnd: release) { [weak self] hold in
+        ReloadHold.begin(in: webView, tint: tint, onEnd: release) { [weak self] hold in
             self?.reloadHold = hold
             self?.webView.reload()
         }
@@ -307,7 +307,7 @@ final class Tab: NSObject, WKNavigationDelegate, WKUIDelegate, WKWebExtensionTab
         let system = ProcessInfo.processInfo.operatingSystemVersion.majorVersion
         configuration.applicationNameForUserAgent = "Version/\(system >= 26 ? system : system + 3).0 Safari/605.1.15"
         configuration.preferences.isElementFullscreenEnabled = true
-        EdgeChangeRouter.install(in: configuration.userContentController)
+        TintRouter.install(in: configuration.userContentController)
         return configuration
     }
 
@@ -316,10 +316,10 @@ final class Tab: NSObject, WKNavigationDelegate, WKUIDelegate, WKWebExtensionTab
     }
 
     /// A new address without a new page is a client-side route change: the page under the strip may
-    /// be a different one, so the probe is asked to look now rather than when it next notices.
+    /// be a different one, so the page's script is asked to read it now rather than when it next notices.
     private func urlChanged() {
         if !webView.isLoading {
-            webView.evaluateJavaScript("globalThis.aeroEdgeProbe?.()", in: nil, in: .defaultClient) { _ in }
+            webView.evaluateJavaScript("globalThis.aeroReadTint?.()", in: nil, in: .defaultClient) { _ in }
         }
         changed([.URL])
     }
@@ -433,7 +433,7 @@ final class Tab: NSObject, WKNavigationDelegate, WKUIDelegate, WKWebExtensionTab
         if let url = webView.url { History.shared.visit(url) }
         showRememberedFavicon(for: webView.url)
         let host = webView.url?.host
-        edge.reset(holding: host != nil && host == committedHost ? 2 : 0.25)
+        pageTint.reset(holding: host != nil && host == committedHost ? 2 : 0.25)
         committedHost = host
         reveal()
         reloadHold?.pageCommitted()

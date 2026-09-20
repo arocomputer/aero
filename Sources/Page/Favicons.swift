@@ -14,7 +14,7 @@ struct DeclaredIcon: Equatable {
 /// suggestions and restored pinned tabs have an icon before any page loads. An icon of a single dark
 /// or light tone comes back as a template image, so it takes the text color of whatever surface it is
 /// drawn on instead of vanishing into a strip of its own tone. Callers check
-/// `BrowserSettings.showsFavicons` first: while it is off nothing here is asked for or fetched.
+/// `Settings.showsFavicons` first: while it is off nothing here is asked for or fetched.
 @MainActor
 final class Favicons {
     static let shared = Favicons(directory: AppPaths.support.appendingPathComponent("Favicons", isDirectory: true))

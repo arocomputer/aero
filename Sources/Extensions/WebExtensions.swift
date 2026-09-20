@@ -254,12 +254,12 @@ final class WebExtensions: NSObject, WKWebExtensionControllerDelegate {
         for window in browserWindows { window.extensionsDidChange() }
     }
 
-    private var browserWindows: [BrowserWindowController] {
-        NSApp.orderedWindows.compactMap { $0.windowController as? BrowserWindowController }
+    private var browserWindows: [WindowController] {
+        NSApp.orderedWindows.compactMap { $0.windowController as? WindowController }
     }
 
-    private var focusedWindow: BrowserWindowController? {
-        NSApp.keyWindow?.windowController as? BrowserWindowController
+    private var focusedWindow: WindowController? {
+        NSApp.keyWindow?.windowController as? WindowController
     }
 
     // MARK: WKWebExtensionControllerDelegate
@@ -281,7 +281,7 @@ final class WebExtensions: NSObject, WKWebExtensionControllerDelegate {
         for context: WKWebExtensionContext,
         completionHandler: @escaping ((any WKWebExtensionTab)?, Error?) -> Void
     ) {
-        let window = configuration.window as? BrowserWindowController ?? focusedWindow ?? browserWindows.first
+        let window = configuration.window as? WindowController ?? focusedWindow ?? browserWindows.first
         guard let window else { return completionHandler(nil, extensionError("No browser window is open.")) }
         let tab = window.openTab(url: configuration.url, inBackground: !configuration.shouldBeActive)
         if configuration.shouldBePinned { window.setPinned(true, tab: tab) }

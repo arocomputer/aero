@@ -74,7 +74,7 @@ scripts/                        guard, commit hooks and their tests, icon packag
 ## Fast test loops
 
 ```sh
-./x test --filter PageEdge
+./x test --filter PageTint
 ./x test --filter History
 ./x test --filter AddressInput
 python3 -m unittest discover -s scripts/hooks -p 'test_*.py'
@@ -118,7 +118,7 @@ better way to meet one of them is welcome; change the code and its comments, not
 
 ## Naming and documentation
 
-Prefer short names such as `Tab`, `History` and `PageEdge`. Let the file and type give
+Prefer short names such as `Tab`, `History` and `PageTint`. Let the file and type give
 context instead of suffixes such as Manager or Provider. Keep conventional Swift naming
 and the standard SwiftPM layout under `Sources/` and `Tests/`.
 

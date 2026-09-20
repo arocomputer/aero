@@ -12,10 +12,10 @@ import WebKit
 /// 3. The picture fades out. For a couple of seconds more the page stays locked to the anchor, so a late
 ///    layout shift is corrected in the frame it happens. Scrolling by hand ends the hold at once.
 ///
-/// `chromeColor` is the strip's color from when the picture was taken. The tab shows it for as long as
+/// `tint` is the strip's color from when the picture was taken. The tab shows it for as long as
 /// the hold lasts, so the strip never follows the half-loaded page underneath.
 final class ReloadHold {
-    let chromeColor: NSColor?
+    let tint: NSColor?
     private weak var webView: WKWebView?
     private let anchor: [String: Any]
     private let cover: Cover
@@ -25,20 +25,20 @@ final class ReloadHold {
     /// Notes the anchor and takes the picture, then hands back a hold already covering `webView`, or nil
     /// when the page could not be pictured. Call `webView.reload()` from `ready`, then `pageCommitted()`
     /// when the new page commits and `end()` if the load fails. `onEnd` runs once, when the hold is over.
-    static func begin(in webView: WKWebView, chromeColor: NSColor?, onEnd: @escaping () -> Void, ready: @escaping (ReloadHold?) -> Void) {
+    static func begin(in webView: WKWebView, tint: NSColor?, onEnd: @escaping () -> Void, ready: @escaping (ReloadHold?) -> Void) {
         webView.callAsyncJavaScript(noteAnchor, arguments: [:], in: nil, in: .defaultClient) { result in
             let anchor = (try? result.get()) as? [String: Any] ?? [:]
             let configuration = WKSnapshotConfiguration()
             configuration.afterScreenUpdates = false
             webView.takeSnapshot(with: configuration) { image, _ in
                 ready(
-                    image.map { ReloadHold(webView: webView, image: $0, anchor: anchor, chromeColor: chromeColor, onEnd: onEnd) })
+                    image.map { ReloadHold(webView: webView, image: $0, anchor: anchor, tint: tint, onEnd: onEnd) })
             }
         }
     }
 
-    private init(webView: WKWebView, image: NSImage, anchor: [String: Any], chromeColor: NSColor?, onEnd: @escaping () -> Void) {
-        (self.webView, self.anchor, self.chromeColor, self.onEnd) = (webView, anchor, chromeColor, onEnd)
+    private init(webView: WKWebView, image: NSImage, anchor: [String: Any], tint: NSColor?, onEnd: @escaping () -> Void) {
+        (self.webView, self.anchor, self.tint, self.onEnd) = (webView, anchor, tint, onEnd)
         cover = Cover(image: image)
         cover.frame = webView.bounds
         cover.autoresizingMask = [.width, .height]

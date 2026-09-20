@@ -1,11 +1,11 @@
 import AppKit
 
 /// Picks the color the chrome should take from a snapshot of the page's top edge.
-enum EdgeColor {
+enum DominantColor {
     /// The most common color across the image's width, ignoring minority content such as a logo or
     /// nav text that touches the edge. The image is squeezed to a row of samples, the samples are
     /// grouped coarsely, and the largest group's average is returned.
-    static func dominant(in image: CGImage) -> NSColor? {
+    static func of(_ image: CGImage) -> NSColor? {
         let samples = 32
         var pixels = [UInt8](repeating: 0, count: samples * 4)
         guard

@@ -7,7 +7,7 @@ import AppKit
 /// Motion follows one rule: things that appear, leave or move are animated, briefly and interruptibly;
 /// the text being typed never is. The field rises in and lifts away, the list resizes, and suggestions
 /// that survive a keystroke stay put while the others crossfade around them.
-final class OmniboxView: NSView, NSTextFieldDelegate {
+final class Omnibox: NSView, NSTextFieldDelegate {
     var onNavigate: ((URL) -> Void)?
     var onDismiss: (() -> Void)?
     var onTextChange: ((String) -> Void)?
@@ -226,7 +226,7 @@ final class OmniboxView: NSView, NSTextFieldDelegate {
     /// new ones fade in and dropped ones fade out.
     private func rebuildRows(select: Int? = nil) {
         // With favicons on, every row has an icon so the titles line up: the site's, or a plain globe.
-        let showsIcons = BrowserSettings.showsFavicons
+        let showsIcons = Settings.showsFavicons
         let items = entries.map {
             let title = $0.title.trimmingCharacters(in: .whitespacesAndNewlines)
             return (
@@ -274,7 +274,7 @@ final class OmniboxView: NSView, NSTextFieldDelegate {
     /// Shows the search provider after a query without adding a duplicate suggestion row.
     private func updateSearchHint() {
         let isSearch = AddressInput.url(for: typed).map(AddressInput.isSearchURL) == true
-        searchHint.stringValue = BrowserSettings.searchEngine.name
+        searchHint.stringValue = Settings.searchEngine.name
         searchHint.isHidden = !isSearch || selected != nil
         placeSearchHint()
     }
@@ -299,7 +299,7 @@ final class OmniboxView: NSView, NSTextFieldDelegate {
 private final class SearchHint: NSTextField {
     init() {
         super.init(frame: .zero)
-        stringValue = BrowserSettings.searchEngine.name
+        stringValue = Settings.searchEngine.name
         isBordered = false
         drawsBackground = false
         isEditable = false

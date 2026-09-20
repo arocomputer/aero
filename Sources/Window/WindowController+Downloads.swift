@@ -1,7 +1,7 @@
 import AppKit
 
 /// The downloads button's menu.
-extension BrowserWindowController {
+extension WindowController {
     /// Shows current-session downloads from newest to oldest. Completed files open in Finder;
     /// running downloads can be cancelled without keeping their original tab alive.
     func showDownloads(relativeTo view: NSView) {
