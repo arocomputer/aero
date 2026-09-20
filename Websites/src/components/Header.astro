@@ -1,0 +1,27 @@
+---
+/** Floating navigation shared by Aero's public pages. */
+import aeroIconUrl from "@/assets/icon.svg?url";
+---
+
+<header class="aero-header">
+  <a class="aero-header-brand" href="/" aria-label="Aero home">
+    <img class="aero-header-mark" src={aeroIconUrl} alt="" />
+  </a>
+  <nav aria-label="Primary navigation">
+    <a
+      href="https://github.com/arocomputer/aero"
+      target="_blank"
+      rel="noopener noreferrer"
+    >
+      Source
+    </a>
+    <a
+      class="aero-header-action"
+      href="https://github.com/arocomputer/aero#build"
+      target="_blank"
+      rel="noopener noreferrer"
+    >
+      Build Aero
+    </a>
+  </nav>
+</header>

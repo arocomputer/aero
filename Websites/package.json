@@ -1,0 +1,35 @@
+{
+  "name": "@arocomputer/aero",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "repository": "github:arocomputer/aero",
+  "scripts": {
+    "dev": "astro dev",
+    "build": "astro build",
+    "preview": "npm run build && wrangler dev",
+    "deploy": "npm run build && wrangler deploy",
+    "format": "prettier --write .",
+    "format:check": "prettier --check .",
+    "lint": "eslint .",
+    "typecheck": "astro check",
+    "audit": "npm audit --audit-level=high",
+    "test": "npm run build && node --test tests/*.test.mjs",
+    "check": "npm run format:check && npm run lint && npm run typecheck && npm run audit && npm test"
+  },
+  "dependencies": {
+    "@fontsource-variable/montserrat": "^5",
+    "astro": "7.3.2"
+  },
+  "devDependencies": {
+    "@astrojs/check": "^0.9",
+    "@eslint/js": "^10",
+    "eslint": "^10",
+    "eslint-plugin-astro": "^3",
+    "prettier": "3.9.6",
+    "prettier-plugin-astro": "^1.0",
+    "typescript": "^5",
+    "typescript-eslint": "^8",
+    "wrangler": "4.132.0"
+  }
+}
