@@ -4,7 +4,7 @@ Instructions for agents and contributors editing this repository. Read
 [CONTRIBUTING.md](CONTRIBUTING.md) for contribution and AI/LLM rules.
 
 Aero is a small, fast macOS browser. It is a native AppKit shell around the system's
-WebKit, with no package dependencies. Its interface is one strip holding the traffic
+WebKit, with no Swift package dependencies. Its interface is one strip holding the traffic
 lights, pinned tabs and tabs. There is no address bar; a centered field appears on a new
 tab and on Command-L. The repository is `arocomputer/aero`. The Swift module is
 `Browser`, so a product rename never touches the sources.
@@ -28,21 +28,23 @@ tab and on Command-L. The repository is `arocomputer/aero`. The Swift module is
 
 ```sh
 ./x hooks      # once per contributing checkout or worktree
-./x check      # format lint, warnings as errors, guard, hook tests, unit tests
+./x check      # check the native app and website
 ./x run        # build build/Aero.app and open it
 ```
 
 Aero needs macOS 15.4 or newer and a Swift 6 toolchain. The Command Line Tools are enough;
-Xcode is not required. Python 3 runs repository tooling. CI runs the same `./x` commands
-on macOS.
+Xcode is not required. Python 3 runs repository tooling. The website needs Node.js 22 or
+newer and `npm ci` from `Websites/`. CI runs the same checks.
 
 `./x quality` runs `./x lint` and `./x guard`. `./x lint` checks formatting with
 `swift format` in strict mode and builds with warnings as errors. `./x fmt` formats in
 place. `./x test` runs the unit tests. `./x app` builds the release bundle, fills
-`Info.plist`, adds the icon and signs it ad hoc.
+`Info.plist`, adds the icon and signs it ad hoc. `./x website check` checks and builds
+the static site.
 
-Required checks are `Validate` from Quality and `Build and Test` from App. Keep those
-names aligned with repository rules.
+Required checks are `Validate` from Quality and `Build and Test` from App. `Website
+Check` runs when `Websites/`, its workflow, or `x` changes. Keep those names aligned
+with repository rules.
 
 The icon is `Sources/UI/app.icon`, an Icon Composer document. That format is a
 folder holding `icon.json` and its artwork; Finder shows it as one file. With Xcode installed, `scripts/icon.sh`
@@ -63,6 +65,7 @@ Sources/UI/                     windows, tab strip, address field and app icon
   app.icon/                     Icon Composer source for the app icon; excluded from the target
 Sources/Website/                web views, page-edge color sampling, pins and reload hold
 Tests/                          focused unit tests, grouped like the source tree
+Websites/                       aerobrowser.app source, checks, and deployment
 scripts/                        guard, commit hooks and their tests, icon packaging
 ```
 
@@ -94,7 +97,7 @@ not raise test windows over their work without asking.
   freezes the page while it paints, up to half a second on a page full of canvases, so
   each painted element gets one per page, after loading, while nothing scrolls. Change
   these limits only with measurements.
-- Aero has no package dependencies, and `scripts/guard.py` enforces it. It uses no private
+- Aero has no Swift package dependencies, and `scripts/guard.py` enforces it. It uses no private
   WebKit API today. Adding either needs a stated reason, evidence that it helps, and for
   private API a run-time lookup that does nothing when the method is gone.
 - The strip has no surface of its own. It takes its color from what touches the page's
@@ -160,4 +163,5 @@ contributor code with a privileged PR token.
 
 `scripts/guard.py` checks action pins and that `Package.swift` declares no dependencies.
 A legitimate boundary change updates the guard with an explanation; do not bypass it.
-There is no release automation yet. See CONTRIBUTING.md before preparing a release.
+The website deploys separately from app releases. There is no app release automation yet.
+See CONTRIBUTING.md before preparing a release.

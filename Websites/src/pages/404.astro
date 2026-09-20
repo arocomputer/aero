@@ -1,0 +1,20 @@
+---
+/** Keep missing Aero URLs inside the product site and return visitors home. */
+import aeroIconUrl from "@/assets/icon.svg?url";
+import Header from "@/components/Header.astro";
+import Site from "@/layouts/Site.astro";
+---
+
+<Site title="Not found" canonical="https://aerobrowser.app">
+  <meta slot="head" name="robots" content="noindex" />
+  <Header />
+  <main id="main" class="aero-not-found">
+    <img src={aeroIconUrl} alt="" />
+    <p>404</p>
+    <h1>Nothing here yet.</h1>
+    <a class="aero-link" href="/">
+      {" "}
+      Back to Aero{" "}
+    </a>
+  </main>
+</Site>

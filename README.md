@@ -1,5 +1,5 @@
 <p align="center">
-  <a href="https://aero.aro.computer">
+  <a href="https://aerobrowser.app">
   <picture>
     <source media="(prefers-color-scheme: dark)" srcset="Assets/Logo/Dark.svg">
     <img src="Assets/Logo/Light.svg" alt="Aero logo" height="42">
@@ -28,11 +28,11 @@ Aero is early in development.
 ## Build
 
 Aero needs macOS 15.4 or newer and a Swift 6 toolchain. The Command Line Tools are enough;
-Xcode is not required.
+Xcode is not required. The website under `Websites/` needs Node.js 22 or newer.
 
 ```sh
 ./x run      # build build/Aero.app and open it
-./x check    # format lint, warnings as errors, guard, hook tests, unit tests
+./x check    # check the native app and website
 ```
 
 The product name lives in one place, `NAME` in `x`.

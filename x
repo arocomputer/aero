@@ -24,6 +24,7 @@ case "$command" in
   check)
     ./x quality
     ./x test
+    ./x website check
     ;;
   quality)
     ./x lint
@@ -44,6 +45,11 @@ case "$command" in
     python3 -m unittest discover -s scripts/hooks -p 'test_*.py'
     ;;
   hooks) python3 scripts/hooks/install.py ;;
+  website)
+    website_command=${1:-check}
+    if [ "$#" -gt 0 ]; then shift; fi
+    (cd Websites && npm run "$website_command" -- "$@")
+    ;;
   app)
     swift_with_selected_sdk build -c release
     rm -rf "$APP"
@@ -69,6 +75,6 @@ case "$command" in
     ./x app
     open "$APP"
     ;;
-  clean) rm -rf .build build ;;
-  *) echo 'usage: ./x [hooks|check|quality|fmt|lint|test|guard|app|signed-app|run|clean]' >&2; exit 2 ;;
+  clean) rm -rf .build build Websites/.astro Websites/.wrangler Websites/dist ;;
+  *) echo 'usage: ./x [hooks|check|quality|fmt|lint|test|guard|website|app|signed-app|run|clean]' >&2; exit 2 ;;
 esac

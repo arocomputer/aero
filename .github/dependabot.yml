@@ -1,5 +1,10 @@
 version: 2
 updates:
+  - package-ecosystem: npm
+    labels: []
+    directory: /Websites
+    schedule:
+      interval: weekly
   - package-ecosystem: github-actions
     labels: []
     directory: /
