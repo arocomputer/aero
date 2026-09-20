@@ -2,7 +2,8 @@
 # Preserve existing checks, then inspect staged content without touching the worktree.
 set -eu
 previous=$(git config --get aero.previousPreCommit || true)
-if [ -n "$previous" ] && [ -x "$previous" ]; then
+# Never this hook under another spelling of its path, which would run it without end.
+if [ -n "$previous" ] && [ -x "$previous" ] && [ ! "$previous" -ef "$0" ]; then
   "$previous" "$@"
 fi
 exec python3 Scripts/hooks/check.py

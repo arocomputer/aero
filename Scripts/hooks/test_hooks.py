@@ -75,6 +75,16 @@ class HookTests(unittest.TestCase):
         result = subprocess.run(['sh', str(HOOK)], cwd=self.root, env=self.env, capture_output=True)
         self.assertEqual(result.returncode, 23)
 
+    def test_hooks_folder_under_another_spelling_is_not_chained_to_itself(self):
+        """A case-insensitive disk reads scripts/hooks and Scripts/hooks as one folder."""
+        ours = self.write('Scripts/hooks/pre-commit', '#!/bin/sh\nexit 0\n')
+        ours.chmod(0o755)
+        self.run_command('git', 'config', 'core.hooksPath', str(self.root / 'scripts/hooks'))
+        self.run_command('python3', str(INSTALL))
+        kept = subprocess.run(
+            ['git', 'config', '--worktree', '--get', 'aero.previousPreCommit'], cwd=self.root, env=self.env, capture_output=True, text=True)
+        self.assertFalse(kept.stdout.strip() and Path(kept.stdout.strip()).samefile(ours))
+
     def test_other_hooks_are_never_silently_disabled(self):
         hook = self.write('previous/pre-push', '#!/bin/sh\nexit 0\n')
         hook.chmod(0o755)
