@@ -17,8 +17,6 @@ cd aero
 
 Aero needs macOS 15.4 or newer and a Swift 6 toolchain. The Command Line Tools are enough.
 Install Python 3 for repository tooling and Node.js 22 or newer for the website.
-Contributors using the managed `~/Code`
-collection should follow its README and use a worktree.
 
 Read [AGENTS.md](AGENTS.md) for the code map, focused test commands, and app
 boundaries. These rules apply to people and agents alike.
