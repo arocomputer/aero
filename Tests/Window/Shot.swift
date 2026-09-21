@@ -33,7 +33,7 @@ func windowShot() async throws {
     let tab = try #require(controller.active)
     // The page is never on screen, so it counts as hidden: the script would hold its follow-up reads
     // and WebKit would stop the frames it watches for. Its own world is told otherwise; the page is
-    // left alone. Tests/Page/OffscreenPage.swift does the same for the same reason.
+    // left alone. Tests/Page/ScriptedPage.swift does the same for the same reason.
     tab.webView.configuration.userContentController.addUserScript(
         WKUserScript(
             source: "Object.defineProperty(document, 'hidden', { get: () => false })",

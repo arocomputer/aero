@@ -132,10 +132,10 @@ authorize one. `./x app` signs ad hoc, which is enough to run the app on the Mac
 built it and not enough to give anyone else; a release needs a Developer ID signature
 and notarization first.
 
-Signing for distribution is not automated, because none of it has ever been run and a
-command nobody has executed is worse than none. What a release will need, once Apple
-grants Aero's managed browser capabilities and a provisioning profile for the explicit
-App ID exists:
+`./x signed-app` retains the existing distribution-signing entry point. It requires
+`AERO_SIGNING_IDENTITY` and `AERO_PROVISIONING_PROFILE`, embeds the profile, signs with
+hardened runtime and a timestamp, and verifies the signature. This path has not been
+verified with publisher credentials. A release still needs:
 
 - the two capabilities Aero asks for, `com.apple.developer.web-browser` and
   `com.apple.developer.web-browser.public-key-credential`, the second being what lets
@@ -145,7 +145,7 @@ App ID exists:
 - a Developer ID Application certificate, the hardened runtime, and a timestamp
 - `codesign --verify --deep --strict` on the result, then notarization
 
-Write that down in `x` when it is first done successfully, not before.
+The development loop does not grant these capabilities or authorize distribution.
 
 After the maintainer explicitly authorizes a release:
 

@@ -95,6 +95,16 @@ case "$command" in
     Scripts/icon.sh Assets/app.icon "$APP/Contents/Resources"
     codesign --force --sign - "$APP"
     ;;
+  signed-app)
+    : "${AERO_SIGNING_IDENTITY:?set AERO_SIGNING_IDENTITY to the certificate name from security find-identity}"
+    : "${AERO_PROVISIONING_PROFILE:?set AERO_PROVISIONING_PROFILE to the downloaded provisioning profile}"
+    test -f "$AERO_PROVISIONING_PROFILE"
+    ./x app
+    cp "$AERO_PROVISIONING_PROFILE" "$APP/Contents/embedded.provisionprofile"
+    codesign --force --options runtime --timestamp --entitlements Aero.entitlements \
+      --sign "$AERO_SIGNING_IDENTITY" "$APP"
+    codesign --verify --deep --strict "$APP"
+    ;;
   dev)
     # The everyday loop: an unoptimized build, a few seconds against the fourteen `./x app` takes; its
     # own data, so it cannot touch your browsing; the Web Inspector, which a release build compiles
@@ -129,7 +139,7 @@ case "$command" in
     ;;
   clean) rm -rf .build build Website/.astro Website/.wrangler Website/dist ;;
   *)
-    echo 'usage: ./x [dev|run|check|test|shot|log|survey|fmt|lint|quality|guard|hooks|website|app|clean]' >&2
+    echo 'usage: ./x [dev|run|check|test|shot|log|survey|fmt|lint|quality|guard|hooks|website|app|signed-app|clean]' >&2
     exit 2
     ;;
 esac
