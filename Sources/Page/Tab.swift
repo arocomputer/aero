@@ -394,7 +394,7 @@ final class Tab: NSObject, WKNavigationDelegate, WKUIDelegate, WKWebExtensionTab
     /// right now, so the strip reads as a continuation of it, a hero image or sticky header included.
     /// Until the first sample of a page arrives it is the page's background color. Deliberately never the
     /// declared theme color, which sites often set to a brand color that matches nothing under the strip.
-    /// Nil while the tab is blank.
+    /// Nil while the tab is blank; the window uses the native address view's background instead.
     var tint: NSColor? {
         if let reloadHold { return reloadHold.tint }
         if isBlank { return nil }

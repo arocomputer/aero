@@ -66,6 +66,10 @@ final class WindowController: NSWindowController, NSWindowDelegate, WKWebExtensi
         omnibox.onNavigate = { [weak self] in self?.navigate(to: $0) }
         omnibox.onDismiss = { [weak self] in self?.dismissOmnibox() }
         omnibox.onTextChange = { [weak self] text in self?.active?.omniboxDraft = text }
+        omnibox.onBackgroundChange = { [weak self] in
+            guard let self, let active, active.isBlank else { return }
+            applyTint(of: active)
+        }
         menuPanel.onAction = { [weak self] in self?.performMenuAction($0) }
 
         // Tells the tab the user is scrolling, so it holds off anything that would make the page stutter.
@@ -268,12 +272,13 @@ final class WindowController: NSWindowController, NSWindowDelegate, WKWebExtensi
     /// or dark to stay legible. This runs on every sample while scrolling, so it only touches what
     /// changed. The window's own appearance is left alone: pages take their color scheme from it.
     /// `fading` is the fade the page is making to this color; a change of tab has none.
+    /// A blank tab shows the native address view, so its background supplies the tint instead of WebKit.
     private func applyTint(of tab: Tab, fading: PageTint.Fade? = nil) {
         guard let window else { return }
-        let color = tab.tint
+        let color = tab.isBlank ? omnibox.pageBackground : tab.tint
         strip.setTint(color, fading: fading)
 
-        let background = tab.isBlank ? nil : tab.webView.underPageBackgroundColor
+        let background = tab.isBlank ? color : tab.webView.underPageBackgroundColor
         if window.backgroundColor != background ?? .textBackgroundColor { window.backgroundColor = background ?? .textBackgroundColor }
 
         var name: NSAppearance.Name?
