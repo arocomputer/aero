@@ -11,15 +11,18 @@ abstraction before adding one.
 git clone https://github.com/arocomputer/aero
 cd aero
 ./x hooks
-(cd Website && npm ci)
-./x run
+(cd Website && npm ci)    # only to work on the site
+./x dev
 ```
 
 Aero needs macOS 15.4 or newer and a Swift 6 toolchain. The Command Line Tools are enough.
 Install Python 3 for repository tooling and Node.js 22 or newer for the website.
 
-Read [AGENTS.md](AGENTS.md) for the code map, focused test commands, and app
-boundaries. These rules apply to people and agents alike.
+`./x dev` is the everyday loop: a debug build, a few seconds against the release bundle's
+fourteen, with its own browsing data and the Web Inspector on, opened in the background so
+it does not take over your screen. `./x run` builds and starts Aero as it ships, which is how
+to meet a change the way someone using the browser would; `./x app` is that build on its own. Read [AGENTS.md](AGENTS.md) for the code map, the log channels, focused test
+commands, and app boundaries. These rules apply to people and agents alike.
 
 ## Commit checks
 
@@ -50,11 +53,13 @@ paste private addresses, history, page content, or unreviewed logs.
 ## Before opening a PR
 
 ```sh
-./x check    # check the native app and website
-./x run      # build the app and look at the change
+./x check                                  # quality, tests, and the website when it is installed
+./x shot https://example.com shot.png      # a picture of the change, with no window on screen
 ```
 
-Run `./x check` for every submission. Every pull request reports two required results.
+Run `./x check` for every submission. It skips the website checks unless `Website/`'s
+packages are installed, which matches how CI splits them; install them and run
+`./x website check` when you touch the site. Every pull request reports two required results.
 Changes to `Website/`, its workflow, or `x` also report `Website / Website Check`.
 
 | Required check | Local command | Coverage |
@@ -66,9 +71,10 @@ GitHub displays workflow and job names together. The results appear as
 `Quality / Validate` and `App / Build and Test`.
 
 A regression test must fail on the original defect. Keep tests focused on the types
-that hold rules. Views have no tests, so include a screenshot or recording when
-appearance or motion changes. Do not weaken an assertion to make a regression pass.
-Update comments and guides with code changes.
+that hold rules. Views have no tests, so include a picture when appearance or motion
+changes: `./x shot` takes one from a real window without raising anything on your desktop,
+and a recording is still the better evidence for motion. Do not weaken an assertion to
+make a regression pass. Update comments and guides with code changes.
 
 Include the setup and before and after measurements when claiming a speed improvement.
 Aero has no performance budgets or benchmark CI gate. Do not commit benchmark code; it
@@ -114,35 +120,39 @@ rather than passing that responsibility to reviewers.
 
 ## Documentation
 
-The README introduces the app. Root markdown files describe repository policy. Keep one
-authoritative account of each rule; use Git history for past decisions.
+The README introduces the app. Root markdown files describe repository policy. A folder gets a
+README of its own only when several files work together and no single file owns that story;
+`Sources/Page/` and `Website/` have one, and nothing else needs one. Keep one authoritative
+account of each rule; use Git history for past decisions.
 
 ## Releases
 
 Aero is in development and has made no release. Commits and pull requests do not
-authorize one. Builds are signed ad hoc, which is enough to run locally and not enough
-to distribute; a release needs a Developer ID signature and notarization first.
+authorize one. `./x app` signs ad hoc, which is enough to run the app on the Mac that
+built it and not enough to give anyone else; a release needs a Developer ID signature
+and notarization first.
 
-After Apple approves Aero's managed browser capabilities, download a provisioning
-profile for the explicit App ID. A signed bundle can then be produced entirely from
-the command line:
+`./x signed-app` retains the existing distribution-signing entry point. It requires
+`AERO_SIGNING_IDENTITY` and `AERO_PROVISIONING_PROFILE`, embeds the profile, signs with
+hardened runtime and a timestamp, and verifies the signature. This path has not been
+verified with publisher credentials. A release still needs:
 
-```sh
-security find-identity -v -p codesigning
-AERO_SIGNING_IDENTITY='Developer ID Application: …' \
-  AERO_PROVISIONING_PROFILE=/path/to/Aero.provisionprofile ./x signed-app
-```
+- the two capabilities Aero asks for, `com.apple.developer.web-browser` and
+  `com.apple.developer.web-browser.public-key-credential`, the second being what lets
+  websites use passkeys from iCloud Keychain; `Sources/App/Passkeys.swift` reports at
+  runtime whether the app holds it
+- the profile embedded at `Contents/embedded.provisionprofile`
+- a Developer ID Application certificate, the hardened runtime, and a timestamp
+- `codesign --verify --deep --strict` on the result, then notarization
 
-`./x signed-app` embeds the profile, enables the entitlements in `Aero.entitlements`,
-uses the hardened runtime, and verifies the resulting signature. Normal `./x app`
-builds remain ad hoc and do not claim capabilities that Apple has not granted.
+The development loop does not grant these capabilities or authorize distribution.
 
 After the maintainer explicitly authorizes a release:
 
 1. Choose the version and update `CFBundleShortVersionString` and `CFBundleVersion` in
    `Info.plist`.
-2. Run `./x check` and `./x app` on the release commit, on a Mac with Xcode so the icon
-   compiles with all its looks. Open the app and try it.
+2. Run `./x check` on the release commit, on a Mac with Xcode so the icon compiles with
+   all its looks, then `./x run` and try the app.
 3. Sign with the Developer ID certificate and notarize the bundle. Never place
    credentials in chat or Git.
 4. Push `v<version>` and draft the GitHub release with the notarized archive, using the

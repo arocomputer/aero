@@ -15,7 +15,11 @@ final class AppDelegate: NSObject, NSApplicationDelegate, ASWebAuthenticationSes
         AppPaths.migratePreviousIdentity()
         let delegate = AppDelegate()
         NSApplication.shared.delegate = delegate
-        NSApp.setActivationPolicy(.regular)
+        // The debug bundle is marked LSUIElement, which keeps it out of the Dock and the app switcher.
+        // The menu bar goes with it, macOS offering no way to drop one and keep the other, though the
+        // menu's shortcuts still work. The shipping Info.plist carries no such key: Aero is an ordinary app.
+        let isAccessory = Bundle.main.object(forInfoDictionaryKey: "LSUIElement") as? Bool == true
+        NSApp.setActivationPolicy(isAccessory ? .accessory : .regular)
         Settings.applyAppearance()
         NSWindow.allowsAutomaticWindowTabbing = false
         // Pages always get thumb-only overlay scrollbars. Left to the system setting, plugging in a mouse

@@ -171,7 +171,10 @@ enum ExtensionCatalog {
         return cardHTML(name: name, summary: summary, category: "installed", icon: manager.iconDataURL(for: context), action: action)
     }
 
-    private static func cardHTML(
+    /// One card. Everything an extension supplies its own text for — name, summary, icon address — is
+    /// escaped here; `action` is the only argument that is HTML, and every caller builds it above from
+    /// constants and escaped values. Not private, so `ExtensionCatalogTests` can pin that.
+    static func cardHTML(
         name: String, summary: String, category: String, icon: String, action: String, appID: Int? = nil
     ) -> String {
         let appAttribute = appID.map { #" data-app-id="\#($0)""# } ?? ""

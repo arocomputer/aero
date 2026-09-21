@@ -37,7 +37,6 @@ final class Tab: NSObject, WKNavigationDelegate, WKUIDelegate, WKWebExtensionTab
     private let isScriptOpened: Bool
     /// So does a page that opened one, such as a sign-in window that reports back to it.
     private var hasOpenedTab = false
-    var isAsleep: Bool { asleep != nil }
     /// The page's address, also while it sleeps.
     var url: URL? { asleep?.url ?? webView.url }
 
@@ -189,18 +188,46 @@ final class Tab: NSObject, WKNavigationDelegate, WKUIDelegate, WKWebExtensionTab
             || globalThis.aeroTypedInEditor === true
         """
 
-    /// What rules sleeping out without asking the page: a tab that shows, was hidden only recently, is
-    /// pinned, blank, waiting, loading, signing in, opened by a script or the opener of a tab, in full
-    /// screen, capturing the camera or microphone, outside the shared session, or not a web page.
-    private func maySleep(hiddenFor minimum: TimeInterval) -> Bool {
-        guard asleep == nil, !isPinned, !isScriptOpened, !hasOpenedTab, !isBlank, pendingURL == nil, reloadHold == nil,
-            authenticationRequest == nil,
-            webView.superview == nil, let hiddenSince, Date().timeIntervalSince(hiddenSince) >= minimum,
-            !webView.isLoading, webView.fullscreenState == .notInFullscreen,
-            webView.cameraCaptureState == .none, webView.microphoneCaptureState == .none,
-            webView.configuration.websiteDataStore.isPersistent, AddressInput.isWeb(webView.url)
-        else { return false }
-        return true
+    /// What rules sleeping out without asking the page. Each case is one reason a tab keeps its page;
+    /// `sleepBlocker` returns the first that applies, which is what the sleep channel reports and what
+    /// the tests pin. Adding a rule means adding a case, so no rule is nameless.
+    enum SleepBlocker: String {
+        case alreadyAsleep
+        case pinned
+        case openedByScript
+        case openedATab
+        case blank
+        case loadPending
+        case reloading
+        case signingIn
+        case onScreen
+        case hiddenTooRecently
+        case loading
+        case fullScreen
+        case capturing
+        case notTheSharedSession
+        case notAWebPage
+    }
+
+    /// The first reason this tab keeps its page, or nil when nothing here stands in the way. The page
+    /// is still asked about playback and typed text afterwards; see `sleepIfIdle`.
+    func sleepBlocker(hiddenFor minimum: TimeInterval) -> SleepBlocker? {
+        if asleep != nil { return .alreadyAsleep }
+        if isPinned { return .pinned }
+        if isScriptOpened { return .openedByScript }
+        if hasOpenedTab { return .openedATab }
+        if isBlank { return .blank }
+        if pendingURL != nil { return .loadPending }
+        if reloadHold != nil { return .reloading }
+        if authenticationRequest != nil { return .signingIn }
+        if webView.superview != nil { return .onScreen }
+        guard let hiddenSince, Date().timeIntervalSince(hiddenSince) >= minimum else { return .hiddenTooRecently }
+        if webView.isLoading { return .loading }
+        if webView.fullscreenState != .notInFullscreen { return .fullScreen }
+        if webView.cameraCaptureState != .none || webView.microphoneCaptureState != .none { return .capturing }
+        if !webView.configuration.websiteDataStore.isPersistent { return .notTheSharedSession }
+        if !AddressInput.isWeb(webView.url) { return .notAWebPage }
+        return nil
     }
 
     /// Puts the tab to sleep if it has been hidden for `minimum` and nothing would be lost: see
@@ -209,14 +236,19 @@ final class Tab: NSObject, WKNavigationDelegate, WKUIDelegate, WKWebExtensionTab
     /// view is let go, which ends its content process, and an idle one, which has no process, takes
     /// its place.
     func sleepIfIdle(hiddenFor minimum: TimeInterval = Tab.sleepAfter) {
-        guard maySleep(hiddenFor: minimum) else { return }
+        if let blocker = sleepBlocker(hiddenFor: minimum) {
+            return Log.write(.sleep, "staying awake: \(blocker.rawValue)")
+        }
         let asked = webView
         asked.requestMediaPlaybackState { [weak self] playback in
-            guard playback != .playing else { return }
+            guard playback != .playing else { return Log.write(.sleep, "staying awake: playing") }
             asked.callAsyncJavaScript(Self.hasEdits, arguments: [:], in: nil, in: .defaultClient) { result in
                 guard let self, asked === self.webView, (try? result.get()) as? Bool == false,
-                    self.maySleep(hiddenFor: minimum), let url = asked.url
-                else { return }
+                    self.sleepBlocker(hiddenFor: minimum) == nil, let url = asked.url
+                else { return Log.write(.sleep, "staying awake: typed text, or a rule changed while asking") }
+                Log.write(
+                    .sleep,
+                    "sleeping after \(Int(minimum))s hidden, keeping \(asked.interactionState == nil ? "the address" : "the session")")
                 self.asleep = (self.title, url, asked.interactionState)
                 self.observations = []
                 asked.navigationDelegate = nil

@@ -21,6 +21,8 @@ final class ReloadHold {
     private let cover: Cover
     private let onEnd: () -> Void
     private var hasEnded = false
+    /// When the picture went up, so the log can say how long the page stayed covered.
+    private let began = Date()
 
     /// Notes the anchor and takes the picture, then hands back a hold already covering `webView`, or nil
     /// when the page could not be pictured. Call `webView.reload()` from `ready`, then `pageCommitted()`
@@ -28,9 +30,12 @@ final class ReloadHold {
     static func begin(in webView: WKWebView, tint: NSColor?, onEnd: @escaping () -> Void, ready: @escaping (ReloadHold?) -> Void) {
         webView.callAsyncJavaScript(noteAnchor, arguments: [:], in: nil, in: .defaultClient) { result in
             let anchor = (try? result.get()) as? [String: Any] ?? [:]
+            Log.write(
+                .reload, "anchor \(anchor.isEmpty ? "none; page is at the top" : "\(anchor["tag"] ?? "?") at \(anchor["top"] ?? "?")")")
             let configuration = WKSnapshotConfiguration()
             configuration.afterScreenUpdates = false
             webView.takeSnapshot(with: configuration) { image, _ in
+                if image == nil { Log.write(.reload, "no picture of the page; reloading uncovered") }
                 ready(
                     image.map { ReloadHold(webView: webView, image: $0, anchor: anchor, tint: tint, onEnd: onEnd) })
             }
@@ -59,6 +64,7 @@ final class ReloadHold {
     func end() {
         guard !hasEnded else { return }
         hasEnded = true
+        Log.write(.reload, "uncovered after \(Int(Date().timeIntervalSince(began) * 1000))ms")
         onEnd()
         let cover = cover
         NSAnimationContext.runAnimationGroup { context in
@@ -94,7 +100,8 @@ final class ReloadHold {
     /// Finds an element near the top of the viewport that can be found again after the reload: one with
     /// an id, a link, or a leaf with some text. It must start inside the viewport and be shorter than it,
     /// or lining it up again would not correct a shift inside it. Returns {} at the top of the page.
-    private static let noteAnchor = """
+    /// Not private so `ReloadAnchorTests` can run it against pages that make it choose.
+    static let noteAnchor = """
         if (scrollY <= 0) return {};
         const describe = element => {
             const box = element.getBoundingClientRect();

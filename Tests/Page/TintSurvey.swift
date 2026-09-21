@@ -2,17 +2,22 @@ import AppKit
 import Foundation
 import Testing
 import WebKit
+
 @testable import Browser
 
 /// Measures how often the script names the color real pages show along their top edge. It loads each
 /// site in a web view that is never put on screen, at the top and scrolled, and compares the script's
 /// answer with the dominant color of a snapshot of the top row. It needs the network and minutes, so
-/// it only runs when asked: `AERO_SURVEY=1 ./x test --filter tintSurvey`. Add sites with
-/// `AERO_SURVEY_SITES=a.com,b.com`.
+/// it only runs when asked: `./x survey`, or `./x survey --filter tintSurvey` with
+/// `AERO_SURVEY_SITES=a.com,b.com` to name your own.
 ///
 /// Read the result knowing what the snapshot cannot see off screen: it often leaves out sticky
 /// headers and content revealed by animation, and a thin accent stripe along the top counts as the
 /// "truth" though the script rightly looks past it. A mismatch is a lead to look into, not a verdict.
+///
+/// It fails only on silence. A page that loaded and painted but drew no report at all means the script
+/// did not run or threw, which is a fault in Aero rather than a judgement about a site; mismatches are
+/// printed and counted, and left for a person to read.
 private let defaultSites = [
     "apple.com", "github.com", "zoah.com", "stripe.com", "linear.app", "vercel.com", "nytimes.com", "en.wikipedia.org",
     "youtube.com", "reddit.com", "amazon.com", "bbc.com", "theverge.com", "medium.com", "notion.so", "figma.com",
@@ -22,13 +27,6 @@ private let defaultSites = [
     "pinterest.com", "quora.com", "ebay.com", "etsy.com", "walmart.com", "ikea.com", "washingtonpost.com",
     "theguardian.com", "bloomberg.com", "wired.com", "arstechnica.com", "techcrunch.com",
 ]
-
-private final class Reports: NSObject, WKScriptMessageHandler {
-    var all: [String] = []
-    func userContentController(_ controller: WKUserContentController, didReceive message: WKScriptMessage) {
-        if let text = message.body as? String { all.append(text) }
-    }
-}
 
 private func rgb(_ color: NSColor?) -> [Int]? {
     guard let color = color?.usingColorSpace(.sRGB) else { return nil }
@@ -56,23 +54,17 @@ private func rgb(_ color: NSColor?) -> [Int]? {
 }
 
 @MainActor private func survey(_ site: String) async -> [String] {
-    let reports = Reports()
-    let configuration = offscreenPageConfiguration()
-    configuration.websiteDataStore = .nonPersistent()
-    TintRouter.install(in: configuration.userContentController, handler: reports)
-    configuration.applicationNameForUserAgent = "Version/26.0 Safari/605.1.15"
-    let webView = WKWebView(frame: NSRect(x: 0, y: 0, width: 1280, height: 800), configuration: configuration)
-    let window = NSWindow(contentRect: webView.frame, styleMask: [.borderless], backing: .buffered, defer: false)
-    window.isReleasedWhenClosed = false
-    window.contentView = webView
-    webView.load(URLRequest(url: URL(string: "https://\(site)/")!))
+    guard let url = URL(string: "https://\(site)/") else { return [] }
+    let page = ScriptedPage(loading: url) { controller, handler in
+        TintRouter.install(in: controller, handler: handler)
+    }
     try? await Task.sleep(for: .seconds(9))
-    let top = verdict(reports.all.last, webView, await topRow(of: webView))
-    _ = try? await webView.evaluateJavaScript("scrollTo(0, 900); 0")
+    let top = verdict(page.reports.last, page.webView, await topRow(of: page.webView))
+    await page.run("scrollTo(0, 900)")
     try? await Task.sleep(for: .seconds(2.5))
-    let scrolled = verdict(reports.all.last, webView, await topRow(of: webView))
+    let scrolled = verdict(page.reports.last, page.webView, await topRow(of: page.webView))
     print(
-        "SURVEY \(site.padding(toLength: 24, withPad: " ", startingAt: 0)) top: \(top) · scrolled: \(scrolled) [\(reports.all.last ?? "-")]"
+        "SURVEY \(site.padding(toLength: 24, withPad: " ", startingAt: 0)) top: \(top) · scrolled: \(scrolled) [\(page.reports.last ?? "-")]"
     )
     return [top, scrolled]
 }
@@ -92,4 +84,5 @@ func tintSurvey() async {
     print(
         "SURVEY of \(sites.count) sites, \(verdicts.count) checks: \(count("match")) match, \(count("pixels")) left to pixels, \(count("MISMATCH")) mismatch, \(count("NO REPORT") + count("no snapshot")) unread"
     )
+    #expect(count("NO REPORT") == 0, "a page painted but the script said nothing about it")
 }

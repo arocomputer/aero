@@ -33,9 +33,13 @@ Aero needs macOS 15.4 or newer and a Swift 6 toolchain. The Command Line Tools a
 Xcode is not required. The website under `Website/` needs Node.js 22 or newer.
 
 ```sh
-./x run      # build build/Aero.app and open it
-./x check    # check the native app and website
+./x dev      # the debug build: fast, its own data, out of the Dock
+./x run      # build and start Aero as it ships
+./x check    # check the native app and, where installed, the website
 ```
+
+`./x dev` is the loop to develop in: it builds in seconds, keeps its browsing data apart
+from the app you use, has the Web Inspector on, and does not take the screen.
 
 The product name lives in one place, `NAME` in `x`.
 

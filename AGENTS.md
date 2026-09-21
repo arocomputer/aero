@@ -1,13 +1,13 @@
 # Working on Aero
 
-Instructions for agents and contributors editing this repository. Read
-[CONTRIBUTING.md](CONTRIBUTING.md) for contribution and AI/LLM rules.
+Instructions for agents and contributors editing this repository. The README introduces the
+app; [CONTRIBUTING.md](CONTRIBUTING.md) covers contribution and AI/LLM rules.
 
-Aero is a small, fast macOS browser. It is a native AppKit shell around the system's
-WebKit, with no Swift package dependencies. Its interface is one strip holding the traffic
-lights, pinned tabs and tabs. There is no address bar; a centered field appears on a new
-tab and on Command-L. The repository is `arocomputer/aero`. The Swift module is
-`Browser`, so a product rename never touches the sources.
+- The repository is `arocomputer/aero` and `main` is its default branch.
+- The Swift module is `Browser`, so a product rename never touches the sources.
+- Aero needs macOS 15.4 or newer and a Swift 6 toolchain. The Command Line Tools are enough;
+  Xcode is not required. Python 3 runs the repository tooling, and `Website/` needs Node.js 22
+  or newer and `npm ci`.
 
 ## Working style
 
@@ -21,33 +21,59 @@ tab and on Command-L. The repository is `arocomputer/aero`. The Swift module is
 - Claim performance only with reproducible evidence. Say what you measured, how, and
   what you could not measure.
 
-## Build and check
+## Commands
 
-```sh
-./x hooks      # once per contributing checkout or worktree
-./x check      # check the native app and website
-./x run        # build build/Aero.app and open it
-```
+| | |
+| --- | --- |
+| `./x hooks` | once per checkout or worktree |
+| `./x dev [url]` | the loop to develop in; see below |
+| `./x run` | build and start Aero as it ships |
+| `./x test --filter <name>` | one group of tests |
+| `./x shot <url> <file.png>` | picture a real window without putting one on screen |
+| `./x log` | follow what `AERO_LOG` turned on |
+| `./x check` | what CI runs |
 
-Aero needs macOS 15.4 or newer and a Swift 6 toolchain. The Command Line Tools are enough;
-Xcode is not required. Python 3 runs repository tooling. The website needs Node.js 22 or
-newer and `npm ci` from `Website/`. CI runs the same checks.
+`./x` with no argument lists the rest: `app`, `quality`, `lint`, `fmt`, `guard`, `survey`,
+`website`, `clean`. Those are pieces the four above call, or things you need once a year.
 
-`./x quality` runs `./x lint` and `./x guard`. `./x lint` checks formatting with
-`swift format` in strict mode and builds with warnings as errors. `./x fmt` formats in
-place. `./x test` runs the unit tests. `./x app` builds the release bundle, fills
-`Info.plist`, adds the icon and signs it ad hoc. `./x website check` checks and builds
-the static site.
+## What to run
 
-Required checks are `Validate` from Quality and `Build and Test` from App. `Website
-Check` runs when `Website/`, its workflow, or `x` changes. Keep those names aligned
-with repository rules.
+Narrowest first. Each step costs more than the one above it, so earn it.
 
-The icon is `Assets/app.icon`, an Icon Composer document. That format is a
-folder holding `icon.json` and its artwork; Finder shows it as one file. With Xcode installed, `Scripts/icon.sh`
-compiles it with `actool` into `Assets.car`, and macOS renders the Default, Dark, Clear and Tinted looks.
-Without Xcode it renders a plain `.icns` of the Default look with Icon Composer's `ictool`.
-The `actool` path is covered by `./x app` on a Mac with Xcode installed.
+1. `./x test --filter <name>` while working. `AERO_TEST_TIMEOUT=3` stops a failing script test
+   waiting out its 20 s settle.
+2. `./x test` before believing it works.
+3. `./x check` before a pull request: quality, the tests, and `./x app`, so a bundle that
+   stopped assembling is caught here rather than in CI. It adds the website checks only where
+   `Website/node_modules` exists, which is how CI splits them.
+4. `./x run` when the change is about the menu bar, the Dock icon, ⌘-Tab or full screen. `./x dev`
+   cannot show those.
+
+Required checks are `Validate` from Quality and `Build and Test` from App. `Website Check` runs
+when `Website/`, its workflow, or `x` changes. Keep those names aligned with repository rules.
+
+Workflows run on `macos-latest`, so a new Xcode — and with it a new `swift format` — arrives on
+GitHub's schedule. Both have a weekly run to meet that on a Monday rather than inside a pull
+request. When `./x lint` passes here and fails there, a newer local Xcode is the first thing to
+check.
+
+The icon is `Assets/app.icon`, an Icon Composer document: a folder holding `icon.json` and its
+artwork, which Finder shows as one file. With Xcode, `Scripts/icon.sh` compiles it with `actool`
+into `Assets.car` and macOS renders the Default, Dark, Clear and Tinted looks; without Xcode it
+falls back to a plain `.icns` of the Default look. `./x app` covers the `actool` path.
+
+## The development loop
+
+- `./x dev` builds unoptimized in seconds, under its own bundle identifier so it cannot touch the
+  data you browse with, and opens in the background. The Web Inspector is on, which a release
+  build compiles out.
+- It is marked `LSUIElement`, so it stays out of the Dock. macOS drops the menu bar with that and
+  offers no way to keep one without the other; the shortcuts still work, but menus, the Dock icon,
+  ⌘-Tab and full screen need `./x run`.
+- `AERO_LOG=tint,sleep ./x dev` turns on a commentary from the parts that decide something
+  invisible; `./x log` follows it. The channels are in `Sources/App/Log.swift`.
+- `./x shot` lives in `Tests/Window/Shot.swift` rather than the app, so the shipping browser
+  cannot be asked to render a page to a file.
 
 ## Where things live
 
@@ -56,36 +82,37 @@ Package.swift                   one executable target, Browser, and its tests
 Info.plist                      bundle template; ./x app fills __NAME__ and __BUNDLE_ID__
 x                               contributor and CI commands; also holds the product name
 Sources/                        the app, one folder per feature
-  App/                          entry point, main menu, app paths, passkeys
+  App/                          entry point, main menu, app paths, passkeys, the log channels
   Window/                       the browser window and its controller, the browser menu, find, the link bubble
   Strip/                        the tab strip and its items
   Omnibox/                      the address field, address parsing, history
-  Page/                         a tab and its page: top-edge color, hovered link, site icons, reload hold
+  Page/                         a tab and its page: top-edge color, hovered link, site icons,
+                                reload hold; its README maps the two Swift-and-JavaScript pipelines
   Settings/                     preferences and the settings page
   Downloads/                    WebKit downloads, destinations and current-session state
   Extensions/                   catalog, installed WebExtensions, permissions, actions and popups
-Tests/                          focused unit tests, grouped like the source tree
+Tests/                          focused unit tests, grouped like the source tree; also the
+                                offscreen page harness, the tint survey and ./x shot
 Assets/                         the app icon's Icon Composer source, logo and wordmark
-Website/                       aerobrowser.app source, checks, and deployment
+Website/                        aerobrowser.app: its own toolchain and deploy, and a README
 Scripts/                        guard, commit hooks and their tests, icon packaging
 ```
 
-## Fast test loops
+## Tests
 
-```sh
-./x test --filter PageTint
-./x test --filter History
-./x test --filter AddressInput
-python3 -m unittest discover -s Scripts/hooks -p 'test_*.py'
-```
+- Pin observable behavior. A regression test must fail against the unfixed code for the intended
+  reason; check that once by breaking the code on purpose, and never weaken an assertion to make
+  one pass.
+- Test the types that hold rules. Views have no tests; show a visual change instead, with
+  `./x shot` and the address it was taken at.
+- A test that needs a page uses `ScriptedPage`, which runs it in a window that is never shown.
+  Use it rather than growing a second harness.
+- `./x survey` measures the tint script against real sites. It needs minutes and the network, so
+  it is not part of `./x check`.
+- The hook tests are Python: `python3 -m unittest discover -s Scripts/hooks -p 'test_*.py'`.
 
-Tests should pin observable behavior. A regression test must fail against the unfixed
-code for the intended reason; check that once by breaking the code on purpose. Tests
-cover the types that hold rules. Views have no tests. Verify a visual change by running
-the app and capturing its window, and say so in the PR.
-
-Do not send synthetic keyboard or pointer input to a desktop someone is using, and do
-not raise test windows over their work without asking.
+Do not send synthetic keyboard or pointer input to a desktop someone is using, and do not raise
+test windows over their work without asking. Nothing here needs to.
 
 ## What Aero is
 
@@ -118,12 +145,29 @@ better way to meet one of them is welcome; change the code and its comments, not
 
 ## Naming and documentation
 
-Prefer short names such as `Tab`, `History` and `PageTint`. Let the file and type give
-context instead of suffixes such as Manager or Provider. Keep conventional Swift naming
-and the standard SwiftPM layout under `Sources/` and `Tests/`.
+Short names. Let the file and the type give the context a suffix would.
+
+```swift
+// Good
+final class Tab {}
+enum PageTint {}
+
+// Bad
+final class TabManager {}
+enum PageTintProvider {}
+```
+
+Keep conventional Swift naming and the standard SwiftPM layout under `Sources/` and `Tests/`.
 
 The README introduces the app, its keys and its layout. Repository policy stays in root
-markdown files. Do not create a docs folder or duplicate guides.
+markdown files. Do not create a docs folder.
+
+A folder earns a README when several files work together and no single file owns that story.
+`Sources/Page/README.md` maps the tint and reload pipelines across Swift and JavaScript;
+`Website/README.md` covers a project with its own toolchain and deploy. Neither restates a doc
+comment or this file, and where they disagree the comment beside the code is right. Every other
+folder is small enough that its files speak for themselves; leave them alone. A README under
+`Sources/` must also be listed in `Package.swift`'s `exclude`, or the build fails on it.
 
 This file states intent and how to work here. Mechanisms, numbers and the reasons behind them
 live in doc comments beside the code they describe, where a change to one changes the other.
