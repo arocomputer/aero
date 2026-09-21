@@ -43,6 +43,7 @@ enum SearchEngine: String, CaseIterable {
         }
         var components = URLComponents(string: address)!
         components.queryItems = [URLQueryItem(name: "q", value: query)]
+        components.percentEncodedQuery = components.percentEncodedQuery?.replacingOccurrences(of: "+", with: "%2B")
         return components.url!
     }
 
@@ -62,6 +63,87 @@ enum SearchEngine: String, CaseIterable {
 enum Settings {
     private static let searchEngineKey = "SearchEngine"
     private static let downloadDirectoryKey = "DownloadDirectory"
+    private static let downloadBookmarkKey = "DownloadDirectoryBookmark"
+    private static var scopedDownloadDirectory: URL?
+    static let zoomLevels = [75, 90, 100, 110, 125, 150, 175, 200]
+
+    static var defaultZoom: Int {
+        get {
+            let value = UserDefaults.standard.integer(forKey: "DefaultPageZoom")
+            return zoomLevels.contains(value) ? value : 100
+        }
+        set { if zoomLevels.contains(newValue) { UserDefaults.standard.set(newValue, forKey: "DefaultPageZoom") } }
+    }
+
+    /// Zero retains history until cleared, -1 disables recording, and positive values are days.
+    static var historyDays: Int {
+        get { UserDefaults.standard.integer(forKey: "HistoryRetentionDays") }
+        set { UserDefaults.standard.set(newValue, forKey: "HistoryRetentionDays") }
+    }
+
+    static var restoresSession: Bool {
+        get {
+            if let mode = UserDefaults.standard.string(forKey: "StartupMode") { return mode == "restore" }
+            return UserDefaults.standard.bool(forKey: "RestoreSession")
+        }
+        set {
+            UserDefaults.standard.set(newValue, forKey: "RestoreSession")
+            UserDefaults.standard.set(newValue ? "restore" : "blank", forKey: "StartupMode")
+            if !newValue { SavedSession.clear() }
+        }
+    }
+
+    static var asksDownloadDestination: Bool {
+        get { UserDefaults.standard.bool(forKey: "AskDownloadDestination") }
+        set { UserDefaults.standard.set(newValue, forKey: "AskDownloadDestination") }
+    }
+
+    static var startupMode: String {
+        get { UserDefaults.standard.string(forKey: "StartupMode") ?? (restoresSession ? "restore" : "blank") }
+        set {
+            guard ["blank", "pages", "restore"].contains(newValue) else { return }
+            UserDefaults.standard.set(newValue, forKey: "StartupMode")
+            UserDefaults.standard.set(newValue == "restore", forKey: "RestoreSession")
+            if newValue != "restore" { SavedSession.clear() }
+        }
+    }
+    static var startupPages: [URL] {
+        (UserDefaults.standard.stringArray(forKey: "StartupPages") ?? []).compactMap(URL.init(string:)).filter(AddressInput.isWeb)
+    }
+    static var sleepTabs: Bool { UserDefaults.standard.object(forKey: "SleepTabs") as? Bool ?? true }
+    static var globalPrivacyControl: Bool {
+        guard #available(macOS 27.0, *) else { return false }
+        return UserDefaults.standard.object(forKey: "GlobalPrivacyControl") as? Bool ?? true
+    }
+    static var trackerBlocking: Bool { UserDefaults.standard.object(forKey: "TrackerBlocking") as? Bool ?? true }
+    static var sleepMinutes: Int {
+        let value = UserDefaults.standard.integer(forKey: "SleepMinutes")
+        return [5, 15, 30, 60, 120].contains(value) ? value : 30
+    }
+    static var minimumFontSize: Double {
+        let value = UserDefaults.standard.double(forKey: "MinimumFontSize")
+        return [0, 9, 12, 14, 16, 18, 20].contains(value) ? value : 0
+    }
+    static var siteZooms: [String: Double] {
+        (UserDefaults.standard.dictionary(forKey: "SiteZooms") as? [String: Double] ?? [:]).filter {
+            $0.value.isFinite && (0.25...5).contains($0.value)
+        }
+    }
+
+    /// Resets preferences while retaining the library, installed extensions and website decisions.
+    static func resetPreferences() {
+        let keys = [
+            "Appearance", "ShowFavicons", "SearchEngine", "CustomSearchDefault", "DefaultPageZoom", "MinimumFontSize", "TabFocusesLinks",
+            "PreferredLanguage", "AppleLanguages", "SleepTabs", "SleepMinutes", "NeverSleepSites", "Autoplay", "RemoteSuggestions",
+            "StartupMode", "RestoreSession", "StartupPages", "HistoryRetentionDays", "HTTPSFirst", "FraudWarnings", "BlockCookies",
+            "ExtensionArtwork", "AskDownloadDestination", "DownloadDirectory", "DownloadDirectoryBookmark",
+        ]
+        keys.forEach { UserDefaults.standard.removeObject(forKey: $0) }
+        scopedDownloadDirectory?.stopAccessingSecurityScopedResource()
+        scopedDownloadDirectory = nil
+        SavedSession.clear()
+        applyAppearance()
+    }
     private static let appearanceKey = "Appearance"
     private static let faviconsKey = "ShowFavicons"
 
@@ -96,14 +178,37 @@ enum Settings {
 
     static var downloadDirectory: URL {
         get {
+            if let scopedDownloadDirectory { return scopedDownloadDirectory }
+            if let data = UserDefaults.standard.data(forKey: downloadBookmarkKey) {
+                var stale = false
+                if let url = try? URL(resolvingBookmarkData: data, options: .withSecurityScope, bookmarkDataIsStale: &stale),
+                    url.startAccessingSecurityScopedResource()
+                {
+                    scopedDownloadDirectory = url
+                    if stale, let fresh = try? url.bookmarkData(options: .withSecurityScope) {
+                        UserDefaults.standard.set(fresh, forKey: downloadBookmarkKey)
+                    }
+                    return url
+                }
+            }
             if let path = UserDefaults.standard.string(forKey: downloadDirectoryKey),
-                FileManager.default.fileExists(atPath: path)
+                FileManager.default.isWritableFile(atPath: path)
             {
                 return URL(fileURLWithPath: path, isDirectory: true)
             }
             return FileManager.default.urls(for: .downloadsDirectory, in: .userDomainMask)[0]
         }
-        set { UserDefaults.standard.set(newValue.standardizedFileURL.path, forKey: downloadDirectoryKey) }
+    }
+
+    /// Keeps sandbox access to a folder selected through NSOpenPanel across browser launches.
+    static func chooseDownloadDirectory(_ url: URL) throws {
+        let accessed = url.startAccessingSecurityScopedResource()
+        defer { if accessed { url.stopAccessingSecurityScopedResource() } }
+        let bookmark = try url.bookmarkData(options: .withSecurityScope)
+        scopedDownloadDirectory?.stopAccessingSecurityScopedResource()
+        scopedDownloadDirectory = nil
+        UserDefaults.standard.set(bookmark, forKey: downloadBookmarkKey)
+        UserDefaults.standard.set(url.path, forKey: downloadDirectoryKey)
     }
 
     static var isDefaultBrowser: Bool {

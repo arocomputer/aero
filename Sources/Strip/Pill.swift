@@ -2,8 +2,8 @@ import AppKit
 
 /// One ordinary tab in the strip. The strip draws the active tab's background; the pill itself shows the
 /// site's icon when it has one, a hover tint, a close "×" on hover, and loading as a darker fill that
-/// sweeps left to right with `progress`. The title always leaves room for the close button, so hovering
-/// never reflows it.
+/// sweeps left to right with `progress`. Hovering crossfades the favicon to site information without
+/// moving the title. Without an icon, the title slides aside. The close button keeps its reserved space.
 final class Pill: NSView, TabItem {
     private(set) weak var tab: Tab?
     var title = "" {
@@ -21,23 +21,34 @@ final class Pill: NSView, TabItem {
             needsLayout = true
         }
     }
-    var isActive = false { didSet { if isActive != oldValue { needsDisplay = true } } }
+    var isActive = false {
+        didSet {
+            if isActive != oldValue {
+                needsDisplay = true
+                arrangeTitle(animated: true)
+            }
+        }
+    }
     var isLoading = false { didSet { if isLoading != oldValue { fill.animator().alphaValue = isLoading ? 1 : 0 } } }
     var progress: Double = 0 { didSet { if progress != oldValue { updateFill(animated: progress > oldValue) } } }
-    /// Whether the context menu offers pinning; a blank tab has nothing to pin.
+    /// Whether the context menu offers pinning; blank and ephemeral tabs cannot be pinned.
     var canPin = true
     var onSelect: (() -> Void)?
     var onClose: (() -> Void)? { didSet { closeButton.onClick = onClose } }
     var onPin: (() -> Void)?
+    var onSiteInformation: (() -> Void)?
+    var representsGroup = false { didSet { if representsGroup != oldValue { needsLayout = true } } }
 
     private let fill = NSView()
     private let iconView = NSImageView()
     private let label = NSTextField(labelWithString: "")
     private let closeButton = StripButton(symbol: "xmark", pointSize: 11)
+    private let infoButton = StripButton(symbol: "info.circle", pointSize: 13, weight: .regular)
     private var isHovered = false {
         didSet {
+            guard isHovered != oldValue else { return }
             needsDisplay = true
-            closeButton.animator().alphaValue = isHovered ? 1 : 0
+            arrangeTitle(animated: true)
         }
     }
 
@@ -55,7 +66,11 @@ final class Pill: NSView, TabItem {
         label.font = StripMetrics.titleFont
         label.lineBreakMode = .byTruncatingTail
         closeButton.alphaValue = 0
-        [fill, iconView, label, closeButton].forEach(addSubview)
+        infoButton.alphaValue = 0
+        infoButton.toolTip = "Site Information and Permissions"
+        infoButton.setAccessibilityLabel("Site Information and Permissions")
+        infoButton.onClick = { [weak self] in self?.onSiteInformation?() }
+        [fill, iconView, label, infoButton, closeButton].forEach(addSubview)
 
         addTrackingArea(
             NSTrackingArea(
@@ -70,34 +85,62 @@ final class Pill: NSView, TabItem {
     override var wantsUpdateLayer: Bool { true }
     override func acceptsFirstMouse(for event: NSEvent?) -> Bool { true }
 
-    /// Everything but the close button counts as the pill, so the title can't swallow clicks.
+    /// Only visible controls intercept a tab click; the title and favicon select the tab.
     override func hitTest(_ point: NSPoint) -> NSView? {
         guard let hit = super.hitTest(point) else { return nil }
-        return hit === closeButton && isHovered ? hit : self
+        if hit === closeButton && isHovered { return hit }
+        if hit === infoButton && showsInformation { return hit }
+        return self
     }
 
     override func updateLayer() {
         layer?.backgroundColor = NSColor.textColor.withAlphaComponent(isHovered && !isActive ? 0.04 : 0).cgColor
         fill.layer?.backgroundColor = NSColor.textColor.withAlphaComponent(0.07).cgColor
         label.textColor = isActive ? .textColor : NSColor.textColor.withAlphaComponent(0.57)
-        // In a pill too narrow for both, the icon gives way to the close button.
-        let isCovered = isHovered && closeButton.frame.minX < iconView.frame.maxX + 2
-        iconView.alphaValue = isCovered ? 0 : isActive ? 1 : 0.6
     }
 
     override func layout() {
         super.layout()
-        let titleX: CGFloat = icon == nil ? 12 : 33
         iconView.frame = NSRect(x: 10, y: 7, width: 16, height: 16)
-        label.frame = NSRect(x: titleX, y: 7, width: max(0, bounds.width - titleX - 28), height: 16)
-        closeButton.frame = NSRect(x: bounds.width - 25, y: 7, width: 16, height: 16)
+        closeButton.frame = NSRect(x: bounds.width - 27, y: 5, width: 20, height: 20)
+        arrangeTitle(animated: false)
         updateFill(animated: false)
+    }
+
+    private var titleInset: CGFloat { icon == nil ? 12 : 33 }
+    private var showsInformation: Bool {
+        !representsGroup && isHovered && AddressInput.isWeb(tab?.url) && bounds.width >= (icon == nil ? titleInset + 70 : 58)
+    }
+
+    /// One interruptible transition swaps the leading icon in both directions. Only iconless tabs
+    /// move their title; narrow tabs give the close button priority over the leading control.
+    private func arrangeTitle(animated: Bool) {
+        let shown = showsInformation
+        let x = titleInset + (shown && icon == nil ? 22 : 0)
+        let titleFrame = NSRect(x: x, y: 7, width: max(0, bounds.width - x - 28), height: 16)
+        // Two points of padding around the existing glyph slot enlarge the hover disc and hit target.
+        let infoFrame = NSRect(x: icon == nil ? titleInset - 2 + (shown ? 0 : -4) : 8, y: 5, width: 20, height: 20)
+        let iconCovered = isHovered && closeButton.frame.minX < iconView.frame.maxX + 2
+        infoButton.setAccessibilityHidden(!shown)
+        NSAnimationContext.runAnimationGroup { context in
+            context.duration = animated && !NSWorkspace.shared.accessibilityDisplayShouldReduceMotion ? 0.16 : 0
+            context.timingFunction = CAMediaTimingFunction(name: .easeOut)
+            label.animator().frame = titleFrame
+            infoButton.animator().frame = infoFrame
+            infoButton.animator().alphaValue = shown ? 1 : 0
+            iconView.animator().alphaValue = shown || iconCovered ? 0 : isActive ? 1 : 0.6
+            closeButton.animator().alphaValue = isHovered ? 1 : 0
+        }
     }
 
     override func menu(for event: NSEvent) -> NSMenu? {
         let menu = NSMenu()
+        if !representsGroup && AddressInput.isWeb(tab?.url) {
+            menu.addItem(withTitle: "Site Information…", action: #selector(informationClicked), keyEquivalent: "").target = self
+        }
         if canPin { menu.addItem(withTitle: "Pin Tab", action: #selector(pinClicked), keyEquivalent: "").target = self }
-        menu.addItem(withTitle: "Close Tab", action: #selector(closeClicked), keyEquivalent: "").target = self
+        menu.addItem(withTitle: representsGroup ? "Close Group" : "Close Tab", action: #selector(closeClicked), keyEquivalent: "").target =
+            self
         return menu
     }
 
@@ -107,6 +150,7 @@ final class Pill: NSView, TabItem {
     override func otherMouseDown(with event: NSEvent) { onClose?() }
 
     @objc private func pinClicked() { onPin?() }
+    @objc private func informationClicked() { onSiteInformation?() }
     @objc private func closeClicked() { onClose?() }
 
     private func updateFill(animated: Bool) {

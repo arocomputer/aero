@@ -6,6 +6,9 @@ final class Window: NSWindow {
     private(set) var firstClickAllowsZoom = false
 
     override func sendEvent(_ event: NSEvent) {
+        if event.type == .keyDown, (windowController as? WindowController)?.active?.recordsActivity == true {
+            for context in WebExtensions.shared.enabledContexts where context.performCommand(for: event) { return }
+        }
         if event.type == .leftMouseDown, event.clickCount == 1 {
             firstClickAllowsZoom =
                 (windowController as? WindowController)?.allowsWindowZoom(at: event.locationInWindow) ?? false

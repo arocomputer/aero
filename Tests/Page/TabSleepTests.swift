@@ -9,8 +9,7 @@ import WebKit
 /// the address its base URL gives it, which is what the rules read.
 @MainActor private func hiddenTab(at address: String = "https://aero.example/page", hiddenFor seconds: TimeInterval = 3600) async -> Tab {
     let url = URL(string: address)!
-    let tab = Tab()
-    tab.load(url)
+    let tab = Tab(configuration: Tab.configuration(), scriptOpened: false)
     tab.webView.loadHTMLString("<title>A page</title>", baseURL: url)
     for _ in 0..<200 where tab.webView.url == nil || tab.webView.isLoading {
         try? await Task.sleep(for: .milliseconds(25))
@@ -45,7 +44,7 @@ import WebKit
 /// A page opened by another page's script keeps its page whatever else is true: its opener holds a
 /// handle to it and may be waiting to hear back.
 @MainActor @Test func aTabOpenedByAScriptKeepsItsPage() async {
-    let tab = Tab(configuration: Tab.configuration())
+    let tab = Tab(configuration: Tab.configuration(), scriptOpened: true)
     tab.webView.loadHTMLString("<title>Opened</title>", baseURL: URL(string: "https://aero.example/popup"))
     for _ in 0..<200 where tab.webView.url == nil || tab.webView.isLoading {
         try? await Task.sleep(for: .milliseconds(25))
@@ -63,4 +62,31 @@ import WebKit
 
     let local = await hiddenTab(at: "file:///tmp/aero-test/page.html")
     #expect(local.sleepBlocker(hiddenFor: Tab.sleepAfter) == .notAWebPage)
+}
+
+/// Edits reported from any frame keep the page alive until a new page commits.
+@MainActor @Test func aTabWithEditedFormsKeepsItsPage() async {
+    let tab = await hiddenTab()
+    #expect(tab.sleepBlocker(hiddenFor: Tab.sleepAfter) == nil)
+    tab.markEdited()
+    #expect(tab.sleepBlocker(hiddenFor: Tab.sleepAfter) == .editedForm)
+    #expect(tab.sleepBlocker(hiddenFor: 0) == .editedForm)
+    tab.webView(tab.webView, didCommit: nil)
+    #expect(tab.sleepBlocker(hiddenFor: Tab.sleepAfter) == nil)
+}
+
+/// Exceptions match the full origin and also apply to the memory-pressure sleep path.
+@MainActor @Test func aTabOnANeverSleepSiteKeepsItsPage() async {
+    let tab = await hiddenTab(at: "https://sleep-exception.example/page")
+    let defaults = UserDefaults.standard
+    let previous = defaults.object(forKey: "NeverSleepSites")
+    defer { defaults.set(previous, forKey: "NeverSleepSites") }
+
+    defaults.set(["http://sleep-exception.example:80", "https://sleep-exception.example:8443"], forKey: "NeverSleepSites")
+    #expect(tab.sleepBlocker(hiddenFor: Tab.sleepAfter) == nil)
+    defaults.set(["https://sleep-exception.example:443"], forKey: "NeverSleepSites")
+    #expect(tab.sleepBlocker(hiddenFor: Tab.sleepAfter) == .neverSleepSite)
+    #expect(tab.sleepBlocker(hiddenFor: 0) == .neverSleepSite)
+    defaults.set([], forKey: "NeverSleepSites")
+    #expect(tab.sleepBlocker(hiddenFor: Tab.sleepAfter) == nil)
 }

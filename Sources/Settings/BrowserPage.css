@@ -1,0 +1,421 @@
+/* Shared foundations: use the system font, quiet surfaces and a readable line length. */
+:root {
+  color-scheme: light dark;
+  font:
+    13px / 1.5 -apple-system,
+    BlinkMacSystemFont,
+    sans-serif;
+  --page: #fafafa;
+  --text: #252527;
+  --muted: #707074;
+  --line: #e8e8ea;
+  --selection: rgb(0 0 0 / 8%);
+  --navigation-hover: rgb(0 0 0 / 4%);
+  --control: #ffffff;
+  --hover: #e9e9ec;
+  --accent: #2265ce;
+  --danger: #b83232;
+}
+
+* {
+  box-sizing: border-box;
+}
+body {
+  margin: 0;
+  background: var(--page);
+  color: var(--text);
+}
+button,
+input,
+select {
+  font: inherit;
+}
+a {
+  color: var(--accent);
+}
+[hidden] {
+  display: none !important;
+}
+:focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: 4px;
+}
+
+/* Navigation and content share one uninterrupted background. */
+.shell {
+  display: grid;
+  grid-template-columns: 200px minmax(0, 1fr);
+  min-height: 100vh;
+}
+.sidebar {
+  position: sticky;
+  top: 0;
+  height: 100vh;
+  padding: 16px 12px 24px;
+  background: var(--page);
+  display: flex;
+  flex-direction: column;
+}
+.sidebar-title {
+  margin: 0 10px 20px;
+  font-size: 16px;
+  font-weight: 600;
+}
+.sidebar nav {
+  display: grid;
+  gap: 3px;
+}
+.sidebar a {
+  padding: 8px 10px;
+  border-radius: 7px;
+  text-decoration: none;
+  color: var(--muted);
+}
+.sidebar a:hover {
+  background: var(--navigation-hover);
+  color: var(--text);
+}
+.sidebar a[aria-current="page"] {
+  /* Match the strip's active tab: an 8% wash of its light or dark text color. */
+  background: var(--selection);
+  color: var(--text);
+  font-weight: 600;
+}
+.sidebar .bottom-link {
+  margin-top: 24px;
+}
+.workspace {
+  min-width: 0;
+  padding: 12px 36px 64px;
+}
+.content {
+  max-width: 640px;
+  margin: 0 auto;
+}
+.search {
+  /* Extend the surface beyond the column so the input text aligns with the headings. */
+  width: calc(100% + 24px);
+  margin-inline: -12px;
+  height: 34px;
+  padding: 0 12px;
+  color: var(--text);
+  background: var(--control);
+  border: 0;
+  outline: none;
+  box-shadow: none;
+  appearance: none;
+  border-radius: 8px;
+  margin-bottom: 30px;
+}
+.search:focus-visible {
+  outline: none;
+  box-shadow: none;
+}
+
+/* Sections rely on spacing and separators rather than nested cards. */
+.settings-navigation {
+  border-radius: 10px;
+  background: var(--control);
+  overflow: hidden;
+}
+.settings-navigation a {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 24px;
+  padding: 18px 20px;
+  text-decoration: none;
+  color: var(--text);
+}
+.settings-navigation a + a {
+  border-top: 1px solid var(--line);
+}
+.settings-navigation a:hover {
+  background: var(--navigation-hover);
+}
+.settings-navigation strong {
+  display: block;
+  font-weight: 550;
+}
+.settings-navigation .navigation-icon {
+  width: 20px;
+  height: 20px;
+  flex: none;
+}
+.settings-navigation a > span:first-of-type {
+  flex: 1;
+}
+.settings-navigation small {
+  display: block;
+  margin-top: 4px;
+  color: var(--muted);
+  font-size: 12px;
+}
+.breadcrumb {
+  display: inline-block;
+  margin-bottom: 16px;
+  text-decoration: none;
+  font-size: 12px;
+}
+.page-heading {
+  margin-bottom: 24px;
+}
+h1 {
+  font-size: 18px;
+  font-weight: 600;
+  line-height: 1.25;
+  letter-spacing: -0.2px;
+  margin: 0 0 6px;
+}
+.page-heading p {
+  color: var(--muted);
+  margin: 0;
+  max-width: 62ch;
+}
+.group {
+  margin-bottom: 28px;
+}
+h2 {
+  font-size: 13px;
+  font-weight: 600;
+  color: var(--muted);
+  margin: 0;
+  padding-bottom: 9px;
+  border-bottom: 1px solid var(--line);
+}
+.setting-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 24px;
+  padding: 14px 0;
+}
+.setting-row + .setting-row {
+  border-top: 1px solid var(--line);
+}
+.setting-copy {
+  min-width: 0;
+}
+.setting-copy > label,
+.setting-title {
+  display: block;
+  font-weight: 550;
+}
+.setting-copy p,
+.description {
+  margin: 5px 0 0;
+  color: var(--muted);
+  font-size: 12px;
+  max-width: 54ch;
+  overflow-wrap: anywhere;
+}
+.controls {
+  display: flex;
+  align-items: center;
+  justify-content: flex-end;
+  gap: 10px;
+  flex-shrink: 0;
+}
+.status {
+  font-size: 12px;
+  color: var(--muted);
+  white-space: nowrap;
+}
+.button,
+button,
+select {
+  min-height: 30px;
+  padding: 5px 10px;
+  border: 1px solid var(--line);
+  border-radius: 6px;
+  background: var(--control);
+  color: var(--text);
+  text-decoration: none;
+  cursor: pointer;
+  font-size: 12px;
+}
+.button:hover,
+button:hover {
+  background: var(--hover);
+}
+select {
+  min-width: 135px;
+  max-width: 210px;
+}
+input[switch] {
+  margin: 0;
+  accent-color: var(--accent);
+  cursor: pointer;
+  flex-shrink: 0;
+}
+.danger {
+  color: var(--danger);
+}
+.note {
+  color: var(--muted);
+  font-size: 12px;
+  margin: 12px 0 0;
+}
+.empty {
+  color: var(--muted);
+  padding: 18px 0;
+  margin: 0;
+}
+.searching .panel {
+  margin-bottom: 28px;
+}
+.searching .page-heading {
+  margin-bottom: 20px;
+}
+
+/* Extensions share the same rows. Details expand in place; discovery loads artwork on demand. */
+.page-actions {
+  display: flex;
+  gap: 10px;
+  margin-top: 16px;
+}
+.extension {
+  padding: 18px 0;
+  border-bottom: 1px solid var(--line);
+}
+.extension-header {
+  display: flex;
+  align-items: center;
+  gap: 14px;
+}
+.extension-icon {
+  width: 32px;
+  height: 32px;
+  object-fit: contain;
+  border-radius: 9px;
+  flex: none;
+}
+.extension-copy {
+  flex: 1;
+  min-width: 0;
+}
+.extension h3 {
+  margin: 0;
+  font-size: 13px;
+  font-weight: 600;
+  overflow-wrap: anywhere;
+}
+.extension .description {
+  margin-top: 3px;
+}
+.extension-details {
+  margin: 12px 0 0 46px;
+}
+summary {
+  cursor: pointer;
+  width: fit-content;
+  font-size: 12px;
+  color: var(--accent);
+}
+.extension-details[open] summary {
+  margin-bottom: 16px;
+}
+.metadata {
+  display: grid;
+  grid-template-columns: 100px 1fr;
+  gap: 10px 16px;
+  font-size: 12px;
+  margin: 0 0 18px;
+}
+.metadata dt {
+  color: var(--muted);
+}
+.metadata dd {
+  margin: 0;
+  overflow-wrap: anywhere;
+}
+.permissions {
+  padding-left: 18px;
+  margin: 8px 0 18px;
+}
+.permission-list {
+  padding: 0;
+  list-style: none;
+}
+.permission-list li {
+  display: flex;
+  justify-content: space-between;
+  gap: 20px;
+  align-items: center;
+  padding: 10px 0;
+  overflow-wrap: anywhere;
+}
+
+/* Wide windows balance the sidebar with equal empty space on the right, centering the content. */
+@media (min-width: 1200px) {
+  .shell {
+    grid-template-columns: 200px minmax(0, 1fr) 200px;
+  }
+}
+
+/* Match system appearance and stay usable with narrow windows or enlarged page text. */
+@media (prefers-color-scheme: dark) {
+  :root {
+    --page: #19191b;
+    --text: #ededee;
+    --muted: #a0a0a5;
+    --line: #2a2a2d;
+    --selection: rgb(255 255 255 / 8%);
+    --navigation-hover: rgb(255 255 255 / 4%);
+    --control: #29292d;
+    --hover: #343438;
+    --accent: #86b3ff;
+    --danger: #ff9993;
+  }
+}
+@media (max-width: 800px) {
+  .shell {
+    grid-template-columns: 185px minmax(0, 1fr);
+  }
+  .sidebar {
+    padding-inline: 12px;
+  }
+  .workspace {
+    padding: 12px 24px 56px;
+  }
+  .setting-row {
+    gap: 18px;
+    flex-wrap: wrap;
+  }
+  .controls {
+    flex-wrap: wrap;
+    justify-content: flex-start;
+  }
+}
+@media (max-width: 560px) {
+  .shell {
+    display: block;
+  }
+  .sidebar {
+    position: static;
+    height: auto;
+    padding: 16px 18px;
+  }
+  .sidebar-title {
+    margin: 0 12px 15px;
+  }
+  .sidebar nav {
+    display: flex;
+    overflow-x: auto;
+  }
+  .sidebar a {
+    white-space: nowrap;
+  }
+  .sidebar .bottom-link {
+    margin-top: 12px;
+  }
+  .workspace {
+    padding: 12px 24px 48px;
+  }
+  .extension-header {
+    flex-wrap: wrap;
+  }
+  .extension-details {
+    margin-left: 0;
+  }
+}

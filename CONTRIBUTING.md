@@ -133,19 +133,60 @@ built it and not enough to give anyone else; a release needs a Developer ID sign
 and notarization first.
 
 `./x signed-app` retains the existing distribution-signing entry point. It requires
-`AERO_SIGNING_IDENTITY` and `AERO_PROVISIONING_PROFILE`, embeds the profile, signs with
+`AERO_SIGNING_IDENTITY`, `AERO_PROVISIONING_PROFILE` and `AERO_UPDATE_PUBLIC_KEY`, embeds the profile, signs with
 hardened runtime and a timestamp, and verifies the signature. This path has not been
-verified with publisher credentials. A release still needs:
+verified with publisher credentials. After Apple approves the capabilities and a profile is available:
 
-- the two capabilities Aero asks for, `com.apple.developer.web-browser` and
-  `com.apple.developer.web-browser.public-key-credential`, the second being what lets
-  websites use passkeys from iCloud Keychain; `Sources/App/Passkeys.swift` reports at
-  runtime whether the app holds it
-- the profile embedded at `Contents/embedded.provisionprofile`
-- a Developer ID Application certificate, the hardened runtime, and a timestamp
-- `codesign --verify --deep --strict` on the result, then notarization
+```sh
+security find-identity -v -p codesigning
+AERO_SIGNING_IDENTITY='Developer ID Application: …' \
+  AERO_PROVISIONING_PROFILE=/path/to/Aero.provisionprofile \
+  AERO_UPDATE_PUBLIC_KEY='public Ed25519 key' ./x signed-app
+```
 
-The development loop does not grant these capabilities or authorize distribution.
+`./x app` signs ad hoc with App Sandbox and hardened runtime using `Sandbox.entitlements`.
+Local ad hoc builds additionally disable library validation because they have no signing team to
+share with Sparkle. This exception is absent from Developer ID builds. `Scripts/sparkle.py` embeds
+the pinned framework and signs its helpers before the enclosing bundle.
+`./x signed-app` also embeds the profile and adds the managed browser entitlements in
+`Aero.entitlements`, then verifies the resulting signature. Ad hoc builds do not claim
+capabilities that Apple has not granted. The profile must cover the browser, passkey and DNS-settings
+entitlements requested by `Aero.entitlements`. `./x notarize-app` signs, submits with the
+`AERO_NOTARY_PROFILE` keychain profile, then staples and validates the accepted ticket.
+Only after validation succeeds does it create or replace `build/Aero.zip` from the stapled app.
+Use that ZIP for distribution. `build/Aero-notarization.zip` is the earlier submission archive
+and does not contain the stapled ticket. No command publishes a release.
+
+`container-migration.plist` moves the current bundle identity's existing browser data into the
+sandbox on first launch. Test migration with a disposable bundle identity and fixture data, never
+by deleting a person's browser container. Custom download folders use security-scoped bookmarks;
+folders chosen before sandboxing may need to be selected again.
+
+Refresh the bundled tracker domains with `python3 Scripts/trackers.py`, review the diff and run
+`./x check`. The list's attribution and redistribution permission ship in `TrackerListNotice.txt`.
+App updates use Sparkle with signed feeds and verification before archive extraction. The sole
+package exception is pinned in `Package.swift` and `Package.resolved`; changing it also requires
+updating the guard. The framework license is copied into the app's resources when packaging.
+
+Create the update-signing key once with `.build/artifacts/sparkle/Sparkle/bin/generate_keys`.
+The tool stores the private key in the login Keychain and prints its public key. Supply only that
+public key as `AERO_UPDATE_PUBLIC_KEY`. Keep signing keys out of chat, source files and Git.
+Builds without the public key do not start update checks. `./x dev` always omits it, even
+when the environment supplies a publisher key, so the dev app cannot install production updates.
+
+After release authorization, run `./x notarize-app` with the signing variables above and
+`AERO_NOTARY_PROFILE` set. Copy its `build/Aero.zip` into the release archives directory under a
+unique filename containing the build version before creating another build. Each newer build must
+have a higher `CFBundleVersion`. Keep the submission ZIP out of this directory. Run
+`AERO_UPDATE_DOWNLOAD_PREFIX=https://…/ ./x update-feed /path/to/archives`. Publish the generated
+signed appcast at the bundle's `SUFeedURL`, together with its signed notes and archives. Never edit
+a signed feed without regenerating its signature. Use a real older and newer signed build to test
+installation and relaunch before distributing updates.
+
+`./x protection-feed` signs the reviewed tracker list using the same Keychain key. Publish the
+generated `Trackers.txt` and `Trackers.txt.sig` at the bundle's `BrowserProtectionListURL` and its
+`.sig` companion. The app rejects bad signatures, malformed lists and older list versions. Failed
+checks keep the last working list. These publishing commands are maintainer release operations.
 
 After the maintainer explicitly authorizes a release:
 

@@ -13,7 +13,9 @@ enum Passkeys {
     }
 
     static var status: String {
-        guard hasEntitlement else { return "Waiting for Apple to approve \(appName)'s browser passkey entitlement." }
+        guard hasEntitlement else {
+            return "Passkeys are unavailable in this build because it lacks the managed browser passkey entitlement."
+        }
         switch ASAuthorizationWebBrowserPublicKeyCredentialManager().authorizationStateForPlatformCredentials {
         case .authorized: return "\(appName) can use passkeys from iCloud Keychain and credential managers."
         case .denied: return "Passkey access is denied for \(appName)."

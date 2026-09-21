@@ -13,6 +13,8 @@ final class Tab: NSObject, WKNavigationDelegate, WKUIDelegate, WKWebExtensionTab
     /// Replaced by a fresh, idle one while the tab sleeps; see `sleepIfIdle`.
     private(set) var webView: WKWebView
     weak var owner: WindowController?
+    /// The opening tab, retained weakly and exposed only while both tabs share an ordinary window.
+    weak var opener: Tab?
     private(set) var isBlank: Bool
     /// Text left unfinished in this tab's address field. The window reuses one field across tabs.
     var omniboxDraft = ""
@@ -20,6 +22,105 @@ final class Tab: NSObject, WKNavigationDelegate, WKUIDelegate, WKWebExtensionTab
     var isOmniboxOpen: Bool
     private var observations: [NSKeyValueObservation] = []
     private var authenticationRequest: ASWebAuthenticationSessionRequest?
+    private var permissionOrigins: [SitePermissions.Kind: Set<String>] = [:]
+    private var failedProtectedRequest: URLRequest?
+    private var requestedURL: URL?
+    private var committedURL: URL?
+    private var navigationRevision = 0
+    private var appliedCookieBlock: Bool?
+    var temporarySitePolicies: [String: SitePolicy.Decision] = [:]
+    private var visitGrants: Set<String> = []
+    var groupName: String?
+    var isNewTabOverride = false
+    private(set) var hasFormEdits = false
+    func markEdited() { hasFormEdits = true }
+    private var zoomOrigin: String?
+    private var privateZooms: [String: Double] = [:]
+    var privateSecurityModes: [String: WebSecurityMode] = [:]
+    func securityMode(at url: URL) -> WebSecurityMode {
+        if !recordsActivity, let origin = BrowsingSecurity.origin(url), let mode = privateSecurityModes[origin] { return mode }
+        return WebSecurityMode.mode(for: url)
+    }
+
+    /// Applies preferences that WebKit supports changing without replacing the page.
+    func refreshPreferences() {
+        webView.configuration.preferences.isFraudulentWebsiteWarningEnabled =
+            UserDefaults.standard.object(forKey: "FraudWarnings") as? Bool ?? true
+        webView.configuration.preferences.tabFocusesLinks = UserDefaults.standard.bool(forKey: "TabFocusesLinks")
+        webView.configuration.preferences.minimumFontSize = AddressInput.isWeb(url) ? Settings.minimumFontSize : 0
+        webView.configuration.websiteDataStore.httpCookieStore.setCookiePolicy(
+            UserDefaults.standard.bool(forKey: "BlockCookies") ? .disallow : .allow
+        ) {}
+    }
+
+    func setUserZoom(_ factor: Double) {
+        let factor = min(5, max(0.25, factor))
+        webView.pageZoom = factor
+        guard let url, let origin = BrowsingSecurity.origin(url) else { return }
+        if recordsActivity {
+            var zooms = Settings.siteZooms
+            zooms[origin] = factor
+            UserDefaults.standard.set(zooms, forKey: "SiteZooms")
+        } else {
+            privateZooms[origin] = factor
+        }
+    }
+
+    /// Applies a removed site zoom to open pages, preserving private tabs' temporary overrides.
+    func resetSavedZoom(for origin: String) {
+        guard let url, BrowsingSecurity.origin(url) == origin else { return }
+        if recordsActivity || privateZooms[origin] == nil { webView.pageZoom = Double(Settings.defaultZoom) / 100 }
+    }
+
+    func resetPermissions() {
+        temporarySitePolicies.removeAll()
+        visitGrants.removeAll()
+        webView.setCameraCaptureState(.none)
+        webView.setMicrophoneCaptureState(.none)
+        if permissionOrigins[.location]?.isEmpty == false { webView.reload() }
+        permissionOrigins.removeAll()
+    }
+
+    /// Private tabs keep explicit choices in memory and ask again before using persistent device grants.
+    func policy(_ feature: SitePolicy.Feature, at url: URL) -> SitePolicy.Decision {
+        if let origin = BrowsingSecurity.origin(url), let value = temporarySitePolicies[feature.rawValue + origin] { return value }
+        let value = SitePolicy.decision(feature, at: url)
+        if !recordsActivity, [.camera, .microphone, .location].contains(feature), value == .allow { return .ask }
+        return value
+    }
+
+    /// One-visit device grants are never persisted and expire when the tab leaves that origin.
+    func allowForVisit(_ feature: SitePolicy.Feature, at url: URL) {
+        guard let origin = BrowsingSecurity.origin(url) else { return }
+        let key = feature.rawValue + origin
+        temporarySitePolicies[key] = .allow
+        visitGrants.insert(key)
+    }
+
+    func clearTemporaryPolicy(_ feature: SitePolicy.Feature, at url: URL) {
+        guard let origin = BrowsingSecurity.origin(url) else { return }
+        let key = feature.rawValue + origin
+        temporarySitePolicies.removeValue(forKey: key)
+        visitGrants.remove(key)
+    }
+
+    /// Device blocks take effect immediately; content policies apply on the next page navigation.
+    func applyPolicyChanges(changed feature: SitePolicy.Feature? = nil, at changedOrigin: String? = nil) {
+        if let url, AddressInput.isWeb(url) { webView.setAllMediaPlaybackSuspended(policy(.media, at: url) == .block) }
+        for kind in SitePermissions.Kind.allCases {
+            if let feature, feature.rawValue != kind.rawValue { continue }
+            for origin in permissionOrigins[kind] ?? [] {
+                if let changedOrigin, origin != changedOrigin { continue }
+                guard let url = URL(string: origin) else { continue }
+                let key = SitePolicy.Feature(rawValue: kind.rawValue)!
+                let decision = policy(key, at: url)
+                let inheritsDefault = SitePolicy.entries(key)[origin] == nil && temporarySitePolicies[key.rawValue + origin] == nil
+                if decision == .block || (feature != nil && (changedOrigin != nil || inheritsDefault) && decision != .allow) {
+                    revokePermission(kind, at: url)
+                }
+            }
+        }
+    }
 
     /// The address this tab was pinned at, restored on launch; nil for ordinary tabs.
     var pinnedURL: URL?
@@ -37,11 +138,13 @@ final class Tab: NSObject, WKNavigationDelegate, WKUIDelegate, WKWebExtensionTab
     private let isScriptOpened: Bool
     /// So does a page that opened one, such as a sign-in window that reports back to it.
     private var hasOpenedTab = false
+    /// Whether the tab has given up its page and is waiting to restore it.
+    var isAsleep: Bool { asleep != nil }
     /// The page's address, also while it sleeps.
-    var url: URL? { asleep?.url ?? webView.url }
+    var url: URL? { asleep?.url ?? pendingURL ?? requestedURL ?? webView.url }
 
     /// The site's icon for the strip: the one remembered for the host once a page commits, then the
-    /// one the page declares once it has loaded. Nil when unknown or while favicons are turned off.
+    /// one the page declares once its DOM is ready. Nil when unknown or while favicons are turned off.
     private(set) var favicon: NSImage?
     private var faviconHost: String?
 
@@ -71,17 +174,36 @@ final class Tab: NSObject, WKNavigationDelegate, WKUIDelegate, WKWebExtensionTab
 
     /// Pass the configuration WebKit hands to `createWebViewWith` for pages opened by script;
     /// such tabs are never blank because WebKit starts their load itself.
-    init(configuration: WKWebViewConfiguration? = nil) {
+    init(configuration: WKWebViewConfiguration? = nil, scriptOpened: Bool = false) {
         isBlank = configuration == nil
         isOmniboxOpen = configuration == nil
-        isScriptOpened = configuration != nil
+        isScriptOpened = scriptOpened
         webView = Tab.makeWebView(configuration ?? Tab.configuration())
         super.init()
         attach()
     }
 
     private static func makeWebView(_ configuration: WKWebViewConfiguration) -> WKWebView {
+        if !configuration.websiteDataStore.isPersistent {
+            configuration.webExtensionController = nil
+        } else if configuration.webExtensionController == nil {
+            configuration.webExtensionController = WebExtensions.shared.controller
+        }
+        // Script-opened windows can inherit their opener's controller. Site policies must remain tab-local.
+        let previousScripts = configuration.userContentController.userScripts
+        let content = WKUserContentController()
+        TintRouter.install(in: content)
+        HoveredLink.install(in: content)
+        Editing.install(in: content)
+        let ownSources = Set(content.userScripts.map(\.source))
+        for script in previousScripts where !ownSources.contains(script.source) { content.addUserScript(script) }
+        configuration.userContentController = content
+        configuration.preferences = WKPreferences()
+        configuration.preferences.isElementFullscreenEnabled = true
+        BrowsingSecurity.configure(configuration)
+        TrackerProtection.shared.installIfReady(in: configuration.userContentController)
         let webView = WKWebView(frame: .zero, configuration: configuration)
+        webView.pageZoom = Double(Settings.defaultZoom) / 100
         webView.allowsBackForwardNavigationGestures = true
         webView.allowsMagnification = true
         #if DEBUG
@@ -92,6 +214,7 @@ final class Tab: NSObject, WKNavigationDelegate, WKUIDelegate, WKWebExtensionTab
 
     /// Makes this tab the delegate and observer of its current web view.
     private func attach() {
+        Editing.shared.bind(webView, to: self)
         webView.navigationDelegate = self
         webView.uiDelegate = self
         observations = [
@@ -132,30 +255,39 @@ final class Tab: NSObject, WKNavigationDelegate, WKUIDelegate, WKWebExtensionTab
     func faviconsSettingChanged() {
         (favicon, faviconHost) = (nil, nil)
         showRememberedFavicon(for: url ?? pinnedURL)
-        if !webView.isLoading { loadFavicon() }
+        if webView.url == committedURL { loadFavicon() }
     }
 
     /// Shows the icon remembered for the address's host. Pages on one host can have icons of their
     /// own, so moving within a host keeps the current icon until the new page declares its own.
     private func showRememberedFavicon(for url: URL?) {
-        let host = Settings.showsFavicons && AddressInput.isWeb(url) ? url?.host?.lowercased() : nil
+        let host =
+            recordsActivity && Settings.historyDays != -1 && Settings.showsFavicons && AddressInput.isWeb(url)
+            ? url?.host?.lowercased() : nil
         guard host != faviconHost else { return }
         faviconHost = host
         favicon = host == nil ? nil : Favicons.shared.icon(for: url)
     }
 
-    /// Asks the loaded page which icons it declares and shows the best one once it is fetched.
+    /// Starts discovery at commit, before slow page resources finish. Results belong to this exact
+    /// navigation and web view, even when another page on the same host replaces it.
     private func loadFavicon() {
-        guard Settings.showsFavicons, let page = webView.url, AddressInput.isWeb(page) else { return }
-        webView.callAsyncJavaScript(Favicons.declaredScript, arguments: [:], in: nil, in: .defaultClient) { [weak self] result in
-            let declared = Favicons.declared(from: try? result.get())
-            Task { @MainActor in
-                guard let image = await Favicons.shared.load(declared: declared, page: page),
-                    let self, Settings.showsFavicons, self.webView.url?.host == page.host, self.favicon !== image
-                else { return }
-                self.favicon = image
-                self.changed()
+        guard recordsActivity, Settings.historyDays != -1, Settings.showsFavicons, let page = webView.url, AddressInput.isWeb(page) else {
+            return
+        }
+        let asked = webView
+        let revision = navigationRevision
+        Task { @MainActor [weak self] in
+            let isCurrent = { [weak self] in
+                guard let self else { return false }
+                return self.webView === asked && self.navigationRevision == revision && asked.url == page
+                    && self.recordsActivity && Settings.showsFavicons && Settings.historyDays != -1
             }
+            guard isCurrent(), let image = await Favicons.shared.load(in: asked, page: page, isCurrent: isCurrent),
+                isCurrent(), let self, self.favicon !== image
+            else { return }
+            self.favicon = image
+            self.changed()
         }
     }
 
@@ -170,22 +302,11 @@ final class Tab: NSObject, WKNavigationDelegate, WKUIDelegate, WKWebExtensionTab
         }
     }
 
-    /// Notes, from the start of each page, that the user typed in a rich editor. What such an editor
-    /// holds cannot be told from a draft by looking later, and it is not restored on waking.
-    private static let noteEditing = """
-        addEventListener('input', event => {
-            if (event.target && event.target.isContentEditable) globalThis.aeroTypedInEditor = true;
-        }, { capture: true, passive: true });
-        """
-
-    /// Whether the page may hold something the user typed: a text field changed from its default, or
-    /// a rich editor typed in at any point of this visit, focused or not. Erring this way keeps some
-    /// tabs awake that could have slept; erring the other way loses a draft.
+    /// A fallback check for main-frame fields, including autofill. Editing also tracks input in every frame.
     private static let hasEdits = """
         return [...document.querySelectorAll('input, textarea')].some(field =>
                 field.type !== 'hidden' && typeof field.defaultValue === 'string' && field.value !== field.defaultValue)
             || document.activeElement?.isContentEditable === true
-            || globalThis.aeroTypedInEditor === true
         """
 
     /// What rules sleeping out without asking the page. Each case is one reason a tab keeps its page;
@@ -193,6 +314,8 @@ final class Tab: NSObject, WKNavigationDelegate, WKUIDelegate, WKWebExtensionTab
     /// the tests pin. Adding a rule means adding a case, so no rule is nameless.
     enum SleepBlocker: String {
         case alreadyAsleep
+        case editedForm
+        case neverSleepSite
         case pinned
         case openedByScript
         case openedATab
@@ -213,6 +336,12 @@ final class Tab: NSObject, WKNavigationDelegate, WKUIDelegate, WKWebExtensionTab
     /// is still asked about playback and typed text afterwards; see `sleepIfIdle`.
     func sleepBlocker(hiddenFor minimum: TimeInterval) -> SleepBlocker? {
         if asleep != nil { return .alreadyAsleep }
+        if hasFormEdits { return .editedForm }
+        if let url, let origin = BrowsingSecurity.origin(url),
+            (UserDefaults.standard.stringArray(forKey: "NeverSleepSites") ?? []).contains(origin)
+        {
+            return .neverSleepSite
+        }
         if isPinned { return .pinned }
         if isScriptOpened { return .openedByScript }
         if hasOpenedTab { return .openedATab }
@@ -231,7 +360,7 @@ final class Tab: NSObject, WKNavigationDelegate, WKUIDelegate, WKWebExtensionTab
     }
 
     /// Puts the tab to sleep if it has been hidden for `minimum` and nothing would be lost: see
-    /// `maySleep`, and it must not be playing anything nor hold typed text. The page's address, history
+    /// `sleepBlocker`, and it must not be playing anything nor hold typed text. The page's address, history
     /// and scroll position come back on waking; what a page keeps only in memory does not. The old web
     /// view is let go, which ends its content process, and an idle one, which has no process, takes
     /// its place.
@@ -281,6 +410,11 @@ final class Tab: NSObject, WKNavigationDelegate, WKUIDelegate, WKWebExtensionTab
     /// Reloads the page so that nothing appears to move, and the strip keeps its color meanwhile; see
     /// `ReloadHold`. A tab that is hidden or has no page reloads plainly.
     func reload() {
+        if let request = failedProtectedRequest {
+            failedProtectedRequest = nil
+            webView.load(request)
+            return
+        }
         guard reloadHold == nil, !isBlank, webView.url != nil, webView.window != nil else { return _ = webView.reload() }
         let release = { [weak self] in
             guard let self else { return }
@@ -293,13 +427,45 @@ final class Tab: NSObject, WKNavigationDelegate, WKUIDelegate, WKWebExtensionTab
         }
     }
 
-    /// A tab's first page fades in once it commits, instead of popping in over the address field.
-    func load(_ url: URL) {
+    /// Restores an ordinary closed tab's navigation state without opening a new-tab override first.
+    func restore(url: URL, state: Any?) {
+        requestedURL = url
+        guard let state else { return load(url) }
+        isBlank = false
+        isOmniboxOpen = false
+        omniboxDraft = ""
+        webView.interactionState = state
+        changed()
+    }
+
+    /// Loads a new address and clears the address-field draft.
+    func load(_ url: URL) { loadRequest(URLRequest(url: url)) }
+
+    /// Privileged extension pages use a bound WebKit configuration. Leaving one creates an ordinary view.
+    private func loadRequest(_ request: URLRequest) {
+        guard let url = request.url else { return }
+        if self.url?.scheme == "webkit-extension", url.scheme != "webkit-extension" {
+            let old = webView
+            let configuration = Tab.configuration(ephemeral: !recordsActivity)
+            configuration.websiteDataStore = old.configuration.websiteDataStore
+            observations.removeAll()
+            old.navigationDelegate = nil
+            old.uiDelegate = nil
+            old.stopLoading()
+            webView = Self.makeWebView(configuration)
+            zoomOrigin = nil
+            appliedCookieBlock = nil
+            attach()
+            isNewTabOverride = false
+            owner?.replaceView(for: self, previous: old)
+        }
+        requestedURL = url
         if webView.url == nil { webView.alphaValue = 0 }
         isBlank = false
         isOmniboxOpen = false
         omniboxDraft = ""
-        webView.load(URLRequest(url: url))
+        failedProtectedRequest = nil
+        webView.load(request)
     }
 
     /// Loads one authentication request, including headers that apply only to its first navigation.
@@ -309,7 +475,17 @@ final class Tab: NSObject, WKNavigationDelegate, WKUIDelegate, WKWebExtensionTab
         isOmniboxOpen = false
         var urlRequest = URLRequest(url: request.url)
         request.additionalHeaderFields?.forEach { urlRequest.setValue($1, forHTTPHeaderField: $0) }
+        failedProtectedRequest = nil
         webView.load(urlRequest)
+    }
+
+    private func showProtectionError() {
+        showError(
+            NSError(
+                domain: "BrowserProtection", code: 1,
+                userInfo: [
+                    NSLocalizedDescriptionKey: "Tracker protection could not start. Reload to try again."
+                ]))
     }
 
     var authenticationRequestID: UUID? { authenticationRequest?.uuid }
@@ -346,14 +522,13 @@ final class Tab: NSObject, WKNavigationDelegate, WKUIDelegate, WKWebExtensionTab
             WebExtensions.shared.configure(configuration)
         }
         AeroPages.shared.configure(configuration)
+        if UserDefaults.standard.bool(forKey: "BlockCookies") {
+            configuration.websiteDataStore.httpCookieStore.setCookiePolicy(.disallow) {}
+        }
         // Safari's version has matched the system's since 26; before that it ran three ahead of macOS.
         let system = ProcessInfo.processInfo.operatingSystemVersion.majorVersion
         configuration.applicationNameForUserAgent = "Version/\(system >= 26 ? system : system + 3).0 Safari/605.1.15"
         configuration.preferences.isElementFullscreenEnabled = true
-        TintRouter.install(in: configuration.userContentController)
-        HoveredLink.install(in: configuration.userContentController)
-        configuration.userContentController.addUserScript(
-            WKUserScript(source: noteEditing, injectionTime: .atDocumentStart, forMainFrameOnly: true, in: .defaultClient))
         return configuration
     }
 
@@ -364,6 +539,7 @@ final class Tab: NSObject, WKNavigationDelegate, WKUIDelegate, WKWebExtensionTab
     /// A new address without a new page is a client-side route change: the page under the strip may
     /// be a different one, so the page's script is asked to read it now rather than when it next notices.
     private func urlChanged() {
+        if let url = webView.url { requestedURL = url }
         if !webView.isLoading {
             webView.evaluateJavaScript("globalThis.aeroReadTint?.()", in: nil, in: .defaultClient) { _ in }
         }
@@ -371,7 +547,7 @@ final class Tab: NSObject, WKNavigationDelegate, WKUIDelegate, WKWebExtensionTab
     }
 
     private func titleChanged() {
-        if let url = webView.url, let title = webView.title, !title.isEmpty {
+        if recordsActivity, let url = webView.url, let title = webView.title, !title.isEmpty {
             History.shared.setTitle(title, for: url)
         }
         changed([.title])
@@ -399,38 +575,133 @@ final class Tab: NSObject, WKNavigationDelegate, WKUIDelegate, WKWebExtensionTab
 
     // MARK: WKNavigationDelegate
 
+    /// Ephemeral WebKit storage also excludes the native history and icon caches.
+    var recordsActivity: Bool { webView.configuration.websiteDataStore.isPersistent }
+
+    /// HTTPS-first for the public web; explicit HTTP remains usable for local servers and LAN devices.
+    func webView(
+        _ webView: WKWebView, decidePolicyFor action: WKNavigationAction, preferences: WKWebpagePreferences,
+        decisionHandler: @escaping (WKNavigationActionPolicy, WKWebpagePreferences) -> Void
+    ) {
+        preferences.preferredHTTPSNavigationPolicy = BrowsingSecurity.httpsPolicy(for: action.request.url)
+        GlobalPrivacyControl.apply(to: preferences)
+        if let url = action.request.url, AddressInput.isWeb(url) {
+            preferences.allowsContentJavaScript = policy(.javaScript, at: url) != .block
+            if action.targetFrame?.isMainFrame == true {
+                securityMode(at: url).apply(to: preferences)
+                webView.configuration.preferences.javaScriptCanOpenWindowsAutomatically = policy(.popups, at: url) == .allow
+                webView.configuration.preferences.minimumFontSize = Settings.minimumFontSize
+                let origin = BrowsingSecurity.origin(url)
+                if zoomOrigin != origin {
+                    zoomOrigin = origin
+                    let saved = origin.flatMap { privateZooms[$0] ?? Settings.siteZooms[$0] }
+                    webView.pageZoom = min(5, max(0.25, saved ?? Double(Settings.defaultZoom) / 100))
+                }
+            }
+        } else if action.targetFrame?.isMainFrame == true, action.request.url?.path.hasPrefix("/action/") != true {
+            if ["aero", "webkit-extension"].contains(action.request.url?.scheme ?? "") { preferences.allowsContentJavaScript = true }
+            if zoomOrigin != "internal" { webView.pageZoom = 1 }
+            zoomOrigin = "internal"
+            webView.configuration.preferences.minimumFontSize = 0
+        }
+        self.webView(webView, decidePolicyFor: action) { decisionHandler($0, preferences) }
+    }
+
     func webView(
         _ webView: WKWebView, decidePolicyFor action: WKNavigationAction,
         decisionHandler: @escaping (WKNavigationActionPolicy) -> Void
     ) {
-        if action.shouldPerformDownload { return decisionHandler(.download) }
+        let isWeb = AddressInput.isWeb(action.request.url)
+        let internalPage = action.request.url?.scheme == "aero" && action.request.url?.path.hasPrefix("/action/") != true
+        guard isWeb || internalPage else {
+            if action.targetFrame?.isMainFrame == true, action.request.url?.path.hasPrefix("/action/") != true {
+                navigationRevision += 1
+                ImageBlocking.remove(from: webView.configuration.userContentController)
+            }
+            return decideNavigation(webView, action: action, decisionHandler: decisionHandler)
+        }
+        let mainFrame = action.targetFrame?.isMainFrame == true
+        if mainFrame { navigationRevision += 1 }
+        let revision = navigationRevision
+        Task { @MainActor in
+            do {
+                let blockCookies = UserDefaults.standard.bool(forKey: "BlockCookies")
+                if mainFrame, appliedCookieBlock != blockCookies {
+                    await webView.configuration.websiteDataStore.httpCookieStore.setCookiePolicy(blockCookies ? .disallow : .allow)
+                    appliedCookieBlock = blockCookies
+                }
+                if isWeb { try await TrackerProtection.shared.prepare(webView.configuration.userContentController) }
+                if mainFrame, let url = action.request.url {
+                    let images = isWeb && policy(.images, at: url) == .block ? try await ImageBlocking.list() : nil
+                    guard revision == navigationRevision else { return decisionHandler(.cancel) }
+                    ImageBlocking.remove(from: webView.configuration.userContentController)
+                    if let images { webView.configuration.userContentController.add(images) }
+                }
+                decideNavigation(webView, action: action, decisionHandler: decisionHandler)
+            } catch {
+                decisionHandler(.cancel)
+                failedProtectedRequest = action.request
+                showProtectionError()
+            }
+        }
+    }
+
+    /// Internal commands require the initiating frame, destination and displayed page to agree.
+    private func decideNavigation(
+        _ webView: WKWebView, action: WKNavigationAction,
+        decisionHandler: @escaping (WKNavigationActionPolicy) -> Void
+    ) {
         guard let url = action.request.url else { return decisionHandler(.allow) }
+        if action.targetFrame?.isMainFrame == true, webView.url?.scheme == "webkit-extension", AddressInput.isWeb(url) {
+            decisionHandler(.cancel)
+            if isNewTabOverride { loadRequest(action.request) } else { owner?.openTab(url: url) }
+            return
+        }
         if action.targetFrame?.isMainFrame != false, completeAuthenticationIfNeeded(with: url) {
             decisionHandler(.cancel)
             return
         }
         if url.scheme == "aero", url.path.hasPrefix("/action/") {
-            if webView.url?.scheme == "aero" {
+            if BrowsingSecurity.allowsInternalAction(
+                url, source: action.sourceFrame.request.url,
+                isMainFrame: action.sourceFrame.isMainFrame, targetsMainFrame: action.targetFrame?.isMainFrame == true),
+                action.sourceFrame.securityOrigin.protocol == "aero", action.sourceFrame.securityOrigin.host == url.host,
+                webView.url?.host == url.host, webView.url?.scheme == "aero"
+            {
                 switch url.host {
                 case "extensions": owner?.handleExtensionCatalogAction(url, from: self)
                 case "settings": owner?.handleSettingsAction(url, from: self)
+                case "history", "bookmarks", "downloads", "site-data": owner?.handleLibraryAction(url, from: self)
                 default: break
                 }
             }
             return decisionHandler(.cancel)
         }
-        guard action.navigationType == .linkActivated else {
-            return decisionHandler(.allow)
-        }
-        if action.modifierFlags.contains(.command) {
-            owner?.openTab(url: url, inBackground: true)
+        if url.scheme == "aero", action.targetFrame?.isMainFrame != true {
             return decisionHandler(.cancel)
         }
-        // Links to other apps (mailto:, tel:, custom schemes) go to the system.
-        if !["http", "https", "aero", "about", "blob", "data", "file", "javascript"].contains(
+        if action.shouldPerformDownload { return decisionHandler(.download) }
+        // External apps require a top-level link and native confirmation, never a script redirect.
+        if !["http", "https", "aero", "about", "blob", "data", "file", "javascript", "webkit-extension"].contains(
             url.scheme?.lowercased() ?? "")
         {
-            NSWorkspace.shared.open(url)
+            decisionHandler(.cancel)
+            guard action.navigationType == .linkActivated, action.sourceFrame.isMainFrame, let window = webView.window else { return }
+            let alert = NSAlert()
+            alert.messageText = "Open another app?"
+            let origin = action.sourceFrame.securityOrigin
+            alert.informativeText =
+                "\(BrowsingSecurity.label(scheme: origin.protocol, host: origin.host, port: origin.port)) wants to open a \(url.scheme ?? "") link."
+            alert.addButton(withTitle: "Cancel")
+            alert.addButton(withTitle: "Open App")
+            alert.beginSheetModal(for: window) { response in
+                if response == .alertSecondButtonReturn { NSWorkspace.shared.open(url) }
+            }
+            return
+        }
+        if action.navigationType == .linkActivated, action.modifierFlags.contains(.command) {
+            let configuration = recordsActivity ? nil : webView.configuration
+            owner?.openTab(url: url, configuration: configuration, inBackground: true)
             return decisionHandler(.cancel)
         }
         decisionHandler(.allow)
@@ -450,10 +721,68 @@ final class Tab: NSObject, WKNavigationDelegate, WKUIDelegate, WKWebExtensionTab
 
     // MARK: WKWebExtensionTab
 
-    func window(for context: WKWebExtensionContext) -> (any WKWebExtensionWindow)? { owner }
-    func indexInWindow(for context: WKWebExtensionContext) -> Int { owner?.tabs.firstIndex { $0 === self } ?? NSNotFound }
+    func window(for context: WKWebExtensionContext) -> (any WKWebExtensionWindow)? {
+        recordsActivity && owner?.isPrivate == false ? owner : nil
+    }
+    func parentTab(for context: WKWebExtensionContext) -> (any WKWebExtensionTab)? {
+        guard recordsActivity, let owner, !owner.isPrivate, let opener, opener.recordsActivity,
+            opener.owner === owner, owner.tabs.contains(where: { $0 === opener })
+        else { return nil }
+        return opener
+    }
+
+    /// Changes the opener only to another public tab in the same window.
+    func setParentTab(
+        _ parent: (any WKWebExtensionTab)?, for context: WKWebExtensionContext, completionHandler: @escaping (Error?) -> Void
+    ) {
+        guard recordsActivity, let owner, !owner.isPrivate,
+            parent == nil
+                || (parent as? Tab).map({ $0 !== self && $0.recordsActivity && $0.owner === owner && owner.tabs.contains($0) }) == true
+        else { return completionHandler(NSError(domain: "BrowserExtension", code: 1)) }
+        opener = parent as? Tab
+        completionHandler(nil)
+    }
+    func indexInWindow(for context: WKWebExtensionContext) -> Int {
+        guard recordsActivity, owner?.isPrivate == false else { return NSNotFound }
+        return owner?.tabs.filter(\.recordsActivity).firstIndex { $0 === self } ?? NSNotFound
+    }
     func webView(for context: WKWebExtensionContext) -> WKWebView? { webView }
     func isPinned(for context: WKWebExtensionContext) -> Bool { isPinned }
+    func setZoomFactor(_ zoomFactor: Double, for context: WKWebExtensionContext, completionHandler: @escaping (Error?) -> Void) {
+        guard zoomFactor.isFinite, zoomFactor > 0 else { return completionHandler(NSError(domain: "BrowserExtension", code: 2)) }
+        setUserZoom(zoomFactor)
+        changed([.zoomFactor])
+        completionHandler(nil)
+    }
+
+    func activate(for context: WKWebExtensionContext, completionHandler: @escaping (Error?) -> Void) {
+        owner?.select(self)
+        owner?.window?.makeKeyAndOrderFront(nil)
+        completionHandler(nil)
+    }
+
+    func close(for context: WKWebExtensionContext, completionHandler: @escaping (Error?) -> Void) {
+        if isPinned { owner?.setPinned(false, tab: self) }
+        owner?.close(self)
+        completionHandler(nil)
+    }
+
+    func duplicate(
+        using configuration: WKWebExtension.TabConfiguration, for context: WKWebExtensionContext,
+        completionHandler: @escaping ((any WKWebExtensionTab)?, Error?) -> Void
+    ) {
+        guard recordsActivity, let owner, !owner.isPrivate else {
+            return completionHandler(
+                nil, NSError(domain: "BrowserExtension", code: 1, userInfo: [NSLocalizedDescriptionKey: "The tab has no window."]))
+        }
+        WebExtensions.shared.openTab(
+            using: configuration, for: context, fallbackWindow: owner, fallbackURL: url, completionHandler: completionHandler)
+    }
+
+    func setSelected(_ selected: Bool, for context: WKWebExtensionContext, completionHandler: @escaping (Error?) -> Void) {
+        if selected { owner?.select(self) }
+        completionHandler(nil)
+    }
 
     func setPinned(_ pinned: Bool, for context: WKWebExtensionContext, completionHandler: @escaping (Error?) -> Void) {
         owner?.setPinned(pinned, tab: self)
@@ -468,26 +797,54 @@ final class Tab: NSObject, WKNavigationDelegate, WKUIDelegate, WKWebExtensionTab
     }
 
     func webView(_ webView: WKWebView, navigationAction: WKNavigationAction, didBecome download: WKDownload) {
-        owner?.downloads.accept(download)
+        acceptDownload(download)
     }
 
     func webView(_ webView: WKWebView, navigationResponse: WKNavigationResponse, didBecome download: WKDownload) {
-        owner?.downloads.accept(download)
+        acceptDownload(download)
+    }
+
+    private func acceptDownload(_ download: WKDownload) {
+        guard let owner else { download.cancel { _ in }; return }
+        let decision = url.map { policy(.downloads, at: $0) } ?? .ask
+        if decision == .block { download.cancel { _ in }; return }
+        if decision == .ask, let window = owner.window {
+            let alert = NSAlert()
+            alert.messageText = "Allow this download?"
+            alert.informativeText = "\(url?.host ?? "This page") wants to download a file."
+            alert.addButton(withTitle: "Download")
+            alert.addButton(withTitle: "Cancel")
+            alert.beginSheetModal(for: window) { response in
+                if response == .alertFirstButtonReturn {
+                    owner.downloads.accept(download, recordsActivity: self.recordsActivity)
+                } else {
+                    download.cancel { _ in }
+                }
+            }
+        } else {
+            owner.downloads.accept(download, recordsActivity: recordsActivity)
+        }
     }
 
     func webView(_ webView: WKWebView, didCommit navigation: WKNavigation!) {
-        if let url = webView.url { History.shared.visit(url) }
+        hasFormEdits = false
+        committedURL = webView.url
+        let origin = committedURL.flatMap(BrowsingSecurity.origin)
+        for key in visitGrants where origin.map({ !key.hasSuffix($0) }) ?? true {
+            temporarySitePolicies.removeValue(forKey: key)
+            visitGrants.remove(key)
+        }
+        if let url = webView.url, AddressInput.isWeb(url) { webView.setAllMediaPlaybackSuspended(policy(.media, at: url) == .block) }
+        permissionOrigins.removeAll()
+        if recordsActivity, let url = webView.url { History.shared.visit(url) }
         owner?.tabDidLeavePage(self)
         showRememberedFavicon(for: webView.url)
+        loadFavicon()
         let host = webView.url?.host
         pageTint.reset(holding: host != nil && host == committedHost ? 2 : 0.25)
         committedHost = host
         reveal()
         reloadHold?.pageCommitted()
-    }
-
-    func webView(_ webView: WKWebView, didFinish navigation: WKNavigation!) {
-        loadFavicon()
     }
 
     func webView(_ webView: WKWebView, didFailProvisionalNavigation navigation: WKNavigation!, withError error: Error) {
@@ -509,7 +866,7 @@ final class Tab: NSObject, WKNavigationDelegate, WKUIDelegate, WKWebExtensionTab
         for action: WKNavigationAction, windowFeatures: WKWindowFeatures
     ) -> WKWebView? {
         hasOpenedTab = true
-        return owner?.openTab(configuration: configuration).webView
+        return owner?.openTab(configuration: configuration, scriptOpened: true, opener: self).webView
     }
 
     func webViewDidClose(_ webView: WKWebView) {
@@ -520,21 +877,21 @@ final class Tab: NSObject, WKNavigationDelegate, WKUIDelegate, WKWebExtensionTab
         _ webView: WKWebView, runJavaScriptAlertPanelWithMessage message: String,
         initiatedByFrame frame: WKFrameInfo, completionHandler: @escaping () -> Void
     ) {
-        runPanel(message: message, buttons: ["OK"]) { _, _ in completionHandler() }
+        runPanel(message: message, frame: frame, buttons: ["OK"]) { _, _ in completionHandler() }
     }
 
     func webView(
         _ webView: WKWebView, runJavaScriptConfirmPanelWithMessage message: String,
         initiatedByFrame frame: WKFrameInfo, completionHandler: @escaping (Bool) -> Void
     ) {
-        runPanel(message: message, buttons: ["OK", "Cancel"]) { confirmed, _ in completionHandler(confirmed) }
+        runPanel(message: message, frame: frame, buttons: ["OK", "Cancel"]) { confirmed, _ in completionHandler(confirmed) }
     }
 
     func webView(
         _ webView: WKWebView, runJavaScriptTextInputPanelWithPrompt prompt: String, defaultText: String?,
         initiatedByFrame frame: WKFrameInfo, completionHandler: @escaping (String?) -> Void
     ) {
-        runPanel(message: prompt, buttons: ["OK", "Cancel"], input: defaultText ?? "") { confirmed, text in
+        runPanel(message: prompt, frame: frame, buttons: ["OK", "Cancel"], input: defaultText ?? "") { confirmed, text in
             completionHandler(confirmed ? text : nil)
         }
     }
@@ -549,33 +906,70 @@ final class Tab: NSObject, WKNavigationDelegate, WKUIDelegate, WKWebExtensionTab
         panel.begin { response in completionHandler(response == .OK ? panel.urls : nil) }
     }
 
-    /// Leaves camera and microphone approval to WebKit's per-origin system prompt.
+    /// Enforces per-origin denials before WebKit's per-origin system approval prompt.
     func webView(
         _ webView: WKWebView, requestMediaCapturePermissionFor origin: WKSecurityOrigin,
         initiatedByFrame frame: WKFrameInfo, type: WKMediaCaptureType,
         decisionHandler: @escaping (WKPermissionDecision) -> Void
     ) {
-        decisionHandler(.prompt)
+        guard let url = URL(string: BrowsingSecurity.label(scheme: origin.protocol, host: origin.host, port: origin.port)) else {
+            return decisionHandler(.deny)
+        }
+        let camera = type == .camera || type == .cameraAndMicrophone
+        let microphone = type == .microphone || type == .cameraAndMicrophone
+        let topURL = committedURL ?? url
+        let cameraDecision = SitePolicy.combined(policy(.camera, at: topURL), policy(.camera, at: url))
+        let microphoneDecision = SitePolicy.combined(policy(.microphone, at: topURL), policy(.microphone, at: url))
+        let denied = (camera && cameraDecision == .block) || (microphone && microphoneDecision == .block)
+        if !denied, let key = BrowsingSecurity.origin(url) {
+            if camera { permissionOrigins[.camera, default: []].insert(key) }
+            if microphone { permissionOrigins[.microphone, default: []].insert(key) }
+            if let top = BrowsingSecurity.origin(topURL) {
+                if camera { permissionOrigins[.camera, default: []].insert(top) }
+                if microphone { permissionOrigins[.microphone, default: []].insert(top) }
+            }
+        }
+        let allowed = (!camera || cameraDecision == .allow) && (!microphone || microphoneDecision == .allow)
+        decisionHandler(denied ? .deny : allowed ? .grant : .prompt)
     }
 
-    /// Leaves location approval to WebKit's per-origin system prompt on macOS 27 and later.
+    /// Enforces location denials before WebKit's system prompt on macOS 27 and later.
     @available(macOS 27.0, *)
+    @objc(webView:requestGeolocationPermissionForOrigin:initiatedByFrame:decisionHandler:)
     func webView(
         _ webView: WKWebView, requestGeolocationPermissionFor origin: WKSecurityOrigin,
         initiatedByFrame frame: WKFrameInfo, decisionHandler: @escaping (WKPermissionDecision) -> Void
     ) {
-        decisionHandler(.prompt)
+        guard let url = URL(string: BrowsingSecurity.label(scheme: origin.protocol, host: origin.host, port: origin.port)) else {
+            return decisionHandler(.deny)
+        }
+        let policy = SitePolicy.combined(policy(.location, at: committedURL ?? url), policy(.location, at: url))
+        let denied = policy == .block
+        if !denied, let key = BrowsingSecurity.origin(url) { permissionOrigins[.location, default: []].insert(key) }
+        if !denied, let top = committedURL.flatMap(BrowsingSecurity.origin) { permissionOrigins[.location, default: []].insert(top) }
+        decisionHandler(denied ? .deny : policy == .allow ? .grant : .prompt)
     }
 
-    /// Shows a page's alert/confirm/prompt as a sheet. `done` gets whether the first button was
-    /// chosen and the input text (empty when `input` is nil).
+    /// Stops an origin's existing access, including embedded frames, without interrupting unrelated tabs.
+    func revokePermission(_ kind: SitePermissions.Kind, at url: URL) {
+        guard let key = BrowsingSecurity.origin(url), permissionOrigins[kind]?.contains(key) == true else { return }
+        switch kind {
+        case .camera: webView.setCameraCaptureState(.none)
+        case .microphone: webView.setMicrophoneCaptureState(.none)
+        case .location: webView.reload()
+        }
+    }
+
+    /// Labels dialogs with the initiating frame's origin so embedded pages cannot impersonate the host.
+    /// `done` gets whether the first button was chosen and the input text, empty when `input` is nil.
     private func runPanel(
-        message: String, buttons: [String], input: String? = nil,
+        message: String, frame: WKFrameInfo, buttons: [String], input: String? = nil,
         done: @escaping (Bool, String) -> Void
     ) {
         guard let window = webView.window else { return done(false, "") }
         let alert = NSAlert()
-        alert.messageText = webView.url?.host ?? appName
+        let origin = frame.securityOrigin
+        alert.messageText = BrowsingSecurity.label(scheme: origin.protocol, host: origin.host, port: origin.port)
         alert.informativeText = message
         buttons.forEach { alert.addButton(withTitle: $0) }
         let field = input.map { text -> NSTextField in

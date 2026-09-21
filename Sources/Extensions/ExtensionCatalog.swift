@@ -11,13 +11,9 @@ private struct CatalogExtension {
     let iconURL: String
 }
 
-/// Aero's first-party extension catalog and its stable internal URL.
-enum ExtensionCatalog {
+/// Installed-first extension management, with explicit local and App Store discovery sections.
+@MainActor enum ExtensionCatalog {
     static let pageURL = URL(string: "aero://extensions")!
-
-    private static let mark = """
-        <svg viewBox="0 0 534 440" aria-hidden="true"><path d="M.777 431.059C59.871 262.605 161.331 0 266.516 0S473.161 262.605 532.255 431.059c1.724 4.915.484 10.746-2.773 6.682C446.411 334.091 362.051 227 266.516 227S86.621 334.091 3.55 437.741C.293 441.805-.947 435.974.777 431.059Z" fill="currentColor"/></svg>
-        """
 
     // WebKit has no extension registry. These entries come from Apple's extension collection and
     // retain the developer's bundle identifier and App Store artwork.
@@ -88,32 +84,40 @@ enum ExtensionCatalog {
             "Purple126/v4/72/fe/70/72fe70b3-116c-5ed7-4471-5137aaeaec35/AppIcon-0-0-85-220-0-0-0-0-4-0-0-0-2x-sRGB-0-0-0-0-0.png"),
     ]
 
-    /// Renders Extensions.html with current install state. Remote pages never receive management actions.
-    static func html() -> String {
-        let manager = WebExtensions.shared
-        let knownBundles = Set(available.map(\.bundleIdentifier))
+    /// Catalog images remain dormant until discovery is opened. No remote metadata fetch is needed.
+    static func html() -> String { html(manager: .shared) }
+
+    static func html(manager: WebExtensions) -> String {
         let availableCards = available.map { card(for: $0, manager: manager) }.joined(separator: "\n")
-        let onMacCards = manager.nativeExtensionApps().filter { !knownBundles.contains($0.bundleIdentifier) }
+        let onMacCards = manager.nativeExtensionApps()
             .map { nativeCard(for: $0, manager: manager) }.joined(separator: "\n")
         let installedCards = manager.contexts.map { installedCard(for: $0, manager: manager) }.joined(separator: "\n")
-
-        let templateURL = Bundle.module.url(forResource: "Extensions", withExtension: "html")!
-        let template = (try? String(contentsOf: templateURL, encoding: .utf8)) ?? "Extensions.html is unavailable."
-        return
-            template
-            .replacingOccurrences(of: "{{mark}}", with: mark)
-            .replacingOccurrences(of: "{{appName}}", with: escape(appName))
-            .replacingOccurrences(of: "{{available}}", with: availableCards)
-            .replacingOccurrences(
-                of: "{{onMac}}",
-                with: onMacCards.isEmpty
-                    ? empty("No additional compatible extension apps were found on this Mac.", category: "on-mac") : onMacCards
-            )
-            .replacingOccurrences(
-                of: "{{installed}}",
-                with: installedCards.isEmpty
-                    ? empty("Extensions you add to \(appName) will appear here.", category: "installed") : installedCards
-            )
+        let failed = manager.failedInstallations.map { item in
+            """
+            <article class="extension" data-search-row>
+              <div class="extension-header">
+                <div class="extension-copy">
+                  <h3>\(escape(item.name))</h3>
+                  <p class="description">Could not load this extension. \(escape(item.message))</p>
+                </div>
+                <a class="button danger" href="\(BrowserPage.action("extensions", "remove-failed", parameters: ["id": item.id]))">Remove…</a>
+              </div>
+            </article>
+            """
+        }.joined(separator: "\n")
+        return BrowserPage.render(
+            "Extensions",
+            values: [
+                "appName": escape(appName),
+                "runtimeStatus": manager.safeMode
+                    ? "<p class=\"note\">Extensions are temporarily disabled for this launch. Saved enable switches apply again after a normal restart.</p>"
+                    : "",
+                "available": availableCards,
+                "onMac": onMacCards.isEmpty ? "<p class=\"empty\">No compatible extension apps were found on this Mac.</p>" : onMacCards,
+                "installed": (installedCards + failed).isEmpty
+                    ? "<p class=\"empty\">No extensions installed. Install a local WebExtension or choose Find extensions.</p>"
+                    : installedCards + failed,
+            ])
     }
 
     static func storeURL(appID: Int) -> URL? {
@@ -138,23 +142,24 @@ enum ExtensionCatalog {
     private static func card(for item: CatalogExtension, manager: WebExtensions) -> String {
         let action: String
         if manager.isInstalled(appBundleIdentifier: item.bundleIdentifier) {
-            action = #"<span class="installed">Installed</span>"#
+            action = #"<span class="status">Installed</span>"#
         } else if NSWorkspace.shared.urlForApplication(withBundleIdentifier: item.bundleIdentifier) != nil {
             action =
-                #"<a class="button" href="aero://extensions/action/install-native?bundle=\#(item.bundleIdentifier)">Add to \#(escape(appName))</a>"#
+                #"<a class="button" href="\#(BrowserPage.action("extensions", "install-native", parameters: ["bundle": item.bundleIdentifier]))">Add to browser</a>"#
         } else {
-            action = #"<a class="button" href="aero://extensions/action/open-store?id=\#(item.appID)">Get</a>"#
+            action = #"<a class="button" href="aero://extensions/action/open-store?id=\#(item.appID)">View in App Store</a>"#
         }
         return cardHTML(
-            name: item.name, summary: item.summary, category: item.category, icon: item.iconURL, action: action,
-            appID: item.appID)
+            name: item.name, summary: item.summary, category: item.category,
+            icon: (UserDefaults.standard.object(forKey: "ExtensionArtwork") as? Bool ?? true) ? item.iconURL : manager.fallbackIconDataURL,
+            action: action)
     }
 
     private static func nativeCard(for app: NativeExtensionApp, manager: WebExtensions) -> String {
         let action =
             manager.isInstalled(appBundleIdentifier: app.bundleIdentifier)
-            ? #"<span class="installed">Installed</span>"#
-            : #"<a class="button" href="aero://extensions/action/install-native?bundle=\#(app.bundleIdentifier)">Add to \#(escape(appName))</a>"#
+            ? #"<span class="status">Installed</span>"#
+            : #"<a class="button" href="\#(BrowserPage.action("extensions", "install-native", parameters: ["bundle": app.bundleIdentifier]))">Add to browser</a>"#
         return cardHTML(
             name: app.name, summary: "Compatible WebExtension found on this Mac.",
             category: "on-mac productivity", icon: app.iconDataURL, action: action)
@@ -164,53 +169,129 @@ enum ExtensionCatalog {
         let name = context.webExtension.displayName ?? "Extension"
         let summary = context.webExtension.displayDescription ?? "Loaded by \(appName)'s WebKit extension runtime."
         let identifier = escape(context.uniqueIdentifier)
+        let enabled = manager.isEnabled(context)
+        let newTab =
+            context.overrideNewTabPageURL == nil
+            ? ""
+            : """
+            <a class="button" href="\(BrowserPage.action("extensions", "new-tab", parameters: ["id": context.uniqueIdentifier]))">\(manager.usesNewTabOverride(context) ? "Restore default new tab" : "Use for new tabs")</a>
+            """
         let options =
-            context.optionsPageURL == nil
-            ? "" : #"<a class="button secondary" href="aero://extensions/action/options?id=\#(identifier)">Options</a>"#
-        let action = #"\#(options)<a class="button danger" href="aero://extensions/action/remove?id=\#(identifier)">Remove</a>"#
-        return cardHTML(name: name, summary: summary, category: "installed", icon: manager.iconDataURL(for: context), action: action)
-    }
-
-    /// One card. Everything an extension supplies its own text for — name, summary, icon address — is
-    /// escaped here; `action` is the only argument that is HTML, and every caller builds it above from
-    /// constants and escaped values. Not private, so `ExtensionCatalogTests` can pin that.
-    static func cardHTML(
-        name: String, summary: String, category: String, icon: String, action: String, appID: Int? = nil
-    ) -> String {
-        let appAttribute = appID.map { #" data-app-id="\#($0)""# } ?? ""
+            context.optionsPageURL == nil || !enabled || manager.safeMode
+            ? "" : #"<a class="button" href="aero://extensions/action/options?id=\#(identifier)">Extension options</a>"#
+        let requested =
+            context.webExtension.requestedPermissions.map { permissionName($0.rawValue) }.sorted()
+            + context.webExtension.requestedPermissionMatchPatterns.map(\.string).sorted()
+        let requestedList = requested.isEmpty ? "None declared" : requested.map(escape).joined(separator: "<br>")
+        let permissionRows = context.grantedPermissions.keys.sorted { $0.rawValue < $1.rawValue }.map { permission in
+            permissionRow(
+                permissionName(permission.rawValue), action: "revoke-permission",
+                parameters: ["id": context.uniqueIdentifier, "permission": permission.rawValue])
+        }
+        let siteRows = context.grantedPermissionMatchPatterns.keys.sorted { $0.string < $1.string }.map { pattern in
+            permissionRow(pattern.string, action: "revoke-site", parameters: ["id": context.uniqueIdentifier, "pattern": pattern.string])
+        }
+        let granted = (permissionRows + siteRows).joined(separator: "\n")
+        let denied =
+            context.deniedPermissions.keys.map { permissionName($0.rawValue) } + context.deniedPermissionMatchPatterns.keys.map(\.string)
+        let deniedHTML =
+            denied.isEmpty
+            ? ""
+            : """
+            <h2>Denied access</h2><p class="description">\(denied.sorted().map(escape).joined(separator: "<br>"))</p>
+            <div class="page-actions"><a class="button" href="\(BrowserPage.action("extensions", "reset-denials", parameters: ["id": context.uniqueIdentifier]))">Allow asking again</a></div>
+            """
+        let errors = (context.webExtension.errors + context.errors).map { escape($0.localizedDescription) }.joined(separator: "<br>")
         return """
-            <article class="card extension"\(appAttribute) data-search="\(escape((name + " " + summary).lowercased()))" data-category="\(escape(category))">
-              <div class="card-inner"><div class="card-top"><img class="icon" src="\(escape(icon))" alt=""><div class="card-title"><h3>\(escape(name))</h3><span class="category">\(categoryLabel(category))</span></div></div><p>\(escape(summary))</p><div class="actions">\(action)</div></div>
+            <article class="extension" data-search-row>
+              <div class="extension-header">
+                <img class="extension-icon" src="\(escape(manager.iconDataURL(for: context)))" alt="">
+                <div class="extension-copy">
+                  <h3>\(escape(name))</h3>
+                  <p class="description">\(escape(summary))</p>
+                </div>
+                <input type="checkbox" switch data-extension-toggle="\(identifier)" aria-label="Enable \(escape(name))"\(enabled ? " checked" : "")>
+              </div>
+              <details class="extension-details" data-detail="\(identifier)">
+                <summary>Details and permissions</summary>
+                <dl class="metadata">
+                  <dt>Version</dt><dd>\(escape(context.webExtension.displayVersion ?? "Not provided"))</dd>
+                  <dt>Source</dt><dd>\(escape(manager.installationSource(for: context)))</dd>
+                  <dt>Requested access</dt><dd>\(requestedList)</dd>
+                </dl>
+                <h2>Granted access</h2>
+                <ul class="permission-list">\(granted.isEmpty ? "<li>No explicit permissions granted.</li>" : granted)</ul>
+                <p class="note">Revoked access may be requested again. Reload open pages to clear changes an extension has already made.</p>
+                \(deniedHTML)
+                \(errors.isEmpty ? "" : "<h2>Extension errors</h2><p class=\"description\">\(errors)</p>")
+                <div class="page-actions">
+                  \(options)
+                  \(newTab)
+                  <a class="button danger" href="aero://extensions/action/remove?id=\(identifier)">Remove…</a>
+                </div>
+              </details>
             </article>
             """
     }
 
-    private static func empty(_ message: String, category: String) -> String {
-        #"<div class="empty extension" data-search="" data-category="\#(category)">\#(escape(message))</div>"#
+    private static func permissionRow(_ name: String, action: String, parameters: [String: String]) -> String {
+        """
+        <li>
+          <span>\(escape(name))</span>
+          <a class="button" href="\(BrowserPage.action("extensions", action, parameters: parameters))" aria-label="Revoke \(escape(name))">Revoke</a>
+        </li>
+        """
     }
 
-    private static func categoryLabel(_ categories: String) -> String {
-        switch categories.split(separator: " ").first {
-        case "privacy": "Privacy & Security"
-        case "appearance": "Appearance"
-        case "developer": "Developer Tools"
-        case "installed": "Installed"
-        case "on-mac": "On This Mac"
-        default: "Productivity"
+    /// Uses plain descriptions for common capabilities, retaining API names for unfamiliar permissions.
+    private static func permissionName(_ permission: String) -> String {
+        switch permission {
+        case "storage": "Store extension data"
+        case "tabs": "Read tab information"
+        case "activeTab": "Access the current tab when you use the extension"
+        case "scripting": "Run scripts on permitted websites"
+        case "cookies": "Read and change cookies on permitted websites"
+        case "webRequest": "Observe requests on permitted websites"
+        case "downloads": "Manage downloads"
+        case "history": "Read browsing history"
+        case "nativeMessaging": "Communicate with a companion app"
+        case "clipboardRead": "Read clipboard contents"
+        case "clipboardWrite": "Write to the clipboard"
+        case "notifications": "Show notifications"
+        case "declarativeNetRequest": "Block or redirect network requests"
+        default: permission
         }
     }
 
+    /// Escapes extension-supplied text and addresses; only the caller-built action is markup.
+    static func cardHTML(
+        name: String, summary: String, category: String, icon: String, action: String
+    ) -> String {
+        let source = icon.hasPrefix("https:") ? "data-src" : "src"
+        return """
+            <article class="extension" data-search-row data-keywords="\(escape(category))">
+              <div class="extension-header">
+                <img class="extension-icon" \(source)="\(escape(icon))" alt="">
+                <div class="extension-copy">
+                  <h3>\(escape(name))</h3>
+                  <p class="description">\(escape(summary))</p>
+                  <p class="note">Compatibility with this browser has not been verified.</p>
+                </div>
+                \(action)
+              </div>
+            </article>
+            """
+    }
+
     private static func escape(_ text: String) -> String {
-        text.replacingOccurrences(of: "&", with: "&amp;")
-            .replacingOccurrences(of: "\"", with: "&quot;")
-            .replacingOccurrences(of: "<", with: "&lt;")
-            .replacingOccurrences(of: ">", with: "&gt;")
+        BrowserPage.escape(text)
     }
 }
 
 /// Serves trusted Aero pages from memory instead of granting a remote site browser privileges.
 final class AeroPages: NSObject, WKURLSchemeHandler {
     static let shared = AeroPages()
+    private var pending: Set<ObjectIdentifier> = []
 
     func configure(_ configuration: WKWebViewConfiguration) {
         configuration.setURLSchemeHandler(self, forURLScheme: "aero")
@@ -220,10 +301,29 @@ final class AeroPages: NSObject, WKURLSchemeHandler {
         guard let url = urlSchemeTask.request.url, url.path.isEmpty || url.path == "/" else {
             return urlSchemeTask.didFailWithError(NSError(domain: NSURLErrorDomain, code: NSURLErrorResourceUnavailable))
         }
+        if url.host == "site-data" {
+            let identifier = ObjectIdentifier(urlSchemeTask as AnyObject)
+            pending.insert(identifier)
+            webView.configuration.websiteDataStore.fetchDataRecords(ofTypes: WKWebsiteDataStore.allWebsiteDataTypes()) {
+                [weak self] records in
+                guard self?.pending.remove(identifier) != nil else { return }
+                let data = Data(LibraryPage.siteData(records, url: url).utf8)
+                urlSchemeTask.didReceive(
+                    URLResponse(url: url, mimeType: "text/html", expectedContentLength: data.count, textEncodingName: "utf-8"))
+                urlSchemeTask.didReceive(data)
+                urlSchemeTask.didFinish()
+            }
+            return
+        }
         let html: String
         switch url.host {
         case "extensions": html = ExtensionCatalog.html()
-        case "settings": html = SettingsPage.html()
+        case "settings":
+            let site = URLComponents(url: url, resolvingAgainstBaseURL: false)?.queryItems?.first { $0.name == "site" }?.value.flatMap(
+                URL.init(string:))
+            html = SettingsPage.html(site: site)
+        case "history", "bookmarks", "downloads":
+            html = LibraryPage.html(for: url, downloads: (webView.navigationDelegate as? Tab)?.owner?.downloads)
         default:
             return urlSchemeTask.didFailWithError(NSError(domain: NSURLErrorDomain, code: NSURLErrorResourceUnavailable))
         }
@@ -234,5 +334,7 @@ final class AeroPages: NSObject, WKURLSchemeHandler {
         urlSchemeTask.didFinish()
     }
 
-    func webView(_ webView: WKWebView, stop urlSchemeTask: any WKURLSchemeTask) {}
+    func webView(_ webView: WKWebView, stop urlSchemeTask: any WKURLSchemeTask) {
+        pending.remove(ObjectIdentifier(urlSchemeTask as AnyObject))
+    }
 }

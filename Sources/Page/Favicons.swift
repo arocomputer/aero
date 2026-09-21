@@ -1,4 +1,5 @@
 import AppKit
+import WebKit
 
 /// One icon a page declares in its head, as reported by `Favicons.declaredScript`.
 struct DeclaredIcon: Equatable {
@@ -10,7 +11,7 @@ struct DeclaredIcon: Equatable {
 }
 
 /// Site icons for tabs and address suggestions. A tab hands over the icons its page declares; the best
-/// one is fetched without cookies, redrawn at 32 pixels and remembered per host as a PNG, so
+/// same-origin one is fetched without cookies, redrawn at 32 pixels and remembered per host as a PNG, so
 /// suggestions and restored pinned tabs have an icon before any page loads. An icon of a single dark
 /// or light tone comes back as a template image, so it takes the text color of whatever surface it is
 /// drawn on instead of vanishing into a strip of its own tone. Callers check
@@ -20,8 +21,12 @@ final class Favicons {
     static let shared = Favicons(directory: AppPaths.support.appendingPathComponent("Favicons", isDirectory: true))
 
     /// The body for `callAsyncJavaScript` that lists a page's declared icons, skipping ones whose
-    /// media query, such as a color scheme, doesn't apply. It reads the head once and changes nothing.
+    /// media query, such as a color scheme, doesn't apply. Waits once for parsing if needed, without
+    /// waiting for images or other load-blocking resources. The ready-state check also covers late calls.
     nonisolated static let declaredScript = """
+        if (document.readyState === 'loading') {
+            await new Promise(resolve => document.addEventListener('DOMContentLoaded', resolve, { once: true }));
+        }
         return [...document.querySelectorAll('link[rel~="icon" i], link[rel~="apple-touch-icon" i]')]
             .filter(link => link.href && (!link.media || matchMedia(link.media).matches))
             .map(link => ({ href: link.href, sizes: link.getAttribute('sizes') || '', rel: link.rel.toLowerCase() }))
@@ -34,12 +39,13 @@ final class Favicons {
     /// asks again on every load and is answered from here.
     private let fetched = NSCache<NSURL, NSImage>()
     private var failed: Set<URL> = []
+    private var generation = 0
     private let fetch: (URL) async throws -> Data?
     private static let session: URLSession = {
         let configuration = URLSessionConfiguration.ephemeral
         configuration.httpCookieStorage = nil
         configuration.timeoutIntervalForRequest = 10
-        return URLSession(configuration: configuration)
+        return URLSession(configuration: configuration, delegate: IconRedirects(), delegateQueue: nil)
     }()
 
     /// Keeps its PNGs in `directory`, created when the first icon is stored. `fetch` returns an
@@ -55,7 +61,9 @@ final class Favicons {
     /// download is given up once it passes `limit` rather than held in memory whole.
     nonisolated static func download(_ url: URL) async throws -> Data? {
         let limit = 2_000_000
-        let (bytes, response) = try await session.bytes(from: url)
+        var request = URLRequest(url: url)
+        if Settings.globalPrivacyControl { request.setValue("1", forHTTPHeaderField: "Sec-GPC") }
+        let (bytes, response) = try await session.bytes(for: request)
         guard (response as? HTTPURLResponse)?.statusCode == 200, response.expectedContentLength <= limit else { return nil }
         var data = Data()
         for try await byte in bytes {
@@ -79,7 +87,8 @@ final class Favicons {
     /// The addresses to try for a page's icon, best first. An icon is drawn at 16 points, 32 pixels on
     /// a Retina display, so the smallest declared icon of at least that size wins, then unsized ones
     /// (often an SVG or a multi-size .ico), then the largest of the small ones, then touch icons, and
-    /// last the conventional /favicon.ico. Only http(s) addresses are kept.
+    /// last the conventional /favicon.ico. Only same-origin http(s) addresses are kept, so native
+    /// icon downloads cannot bypass WebKit's third-party tracker rules.
     nonisolated static func candidates(declared: [DeclaredIcon], page: URL) -> [URL] {
         func rank(_ icon: DeclaredIcon) -> (Int, Int) {
             if icon.isTouchIcon { return (3, 0) }
@@ -93,7 +102,9 @@ final class Favicons {
         var urls = ordered.map(\.element.url)
         if let conventional = URL(string: "/favicon.ico", relativeTo: page)?.absoluteURL { urls.append(conventional) }
         var seen: Set<URL> = []
-        return urls.filter { AddressInput.isWeb($0) && seen.insert($0).inserted }
+        return urls.filter {
+            AddressInput.isWeb($0) && BrowsingSecurity.origin($0) == BrowsingSecurity.origin(page) && seen.insert($0).inserted
+        }
     }
 
     /// The icon remembered for the address's host, from memory or disk; nil when there is none yet.
@@ -106,11 +117,29 @@ final class Favicons {
         return image
     }
 
+    /// Discovers icons in the isolated world once the DOM is ready. A clear or superseded navigation
+    /// during discovery must not start a new cache write. The caller also checks currency before display.
+    func load(in webView: WKWebView, page: URL, isCurrent: () -> Bool) async -> NSImage? {
+        let generation = generation
+        let declared: [DeclaredIcon]? = await withCheckedContinuation { continuation in
+            webView.callAsyncJavaScript(Self.declaredScript, arguments: [:], in: nil, in: .defaultClient) { result in
+                switch result {
+                case .success(let value): continuation.resume(returning: Self.declared(from: value))
+                case .failure: continuation.resume(returning: nil)
+                }
+            }
+        }
+        guard let declared, generation == self.generation, isCurrent() else { return nil }
+        return await load(declared: declared, page: page)
+    }
+
     /// Fetches the best icon for `page` among the ones it declared and remembers it for the host.
     /// Returns nil when no candidate yields an image.
     func load(declared: [DeclaredIcon], page: URL) async -> NSImage? {
         guard let host = page.host?.lowercased() else { return nil }
+        let generation = generation
         for url in Self.candidates(declared: declared, page: page) where !failed.contains(url) {
+            guard generation == self.generation else { return nil }
             if let image = fetched.object(forKey: url as NSURL) {
                 remember(image, for: host)
                 return image
@@ -118,6 +147,7 @@ final class Favicons {
             // Trouble reaching the server may pass, so only an answer without an image rules an address out.
             let answer: Data?
             do { answer = try await fetch(url) } catch { continue }
+            guard generation == self.generation else { return nil }
             guard let bitmap = answer.flatMap(Self.bitmap) else {
                 if failed.count >= 500 { failed.removeAll() }
                 failed.insert(url)
@@ -132,8 +162,9 @@ final class Favicons {
     }
 
     /// Forgets every icon, in memory and on disk. Icons name the sites visited, so this goes with
-    /// clearing history.
+    /// clearing history. Pending requests cannot put a cleared icon back into storage.
     func clear() {
+        generation += 1
         byHost.removeAllObjects()
         fetched.removeAllObjects()
         failed = []
@@ -203,5 +234,18 @@ final class Favicons {
             }
         }
         return total > 0 && max(dark, light) >= total * 0.97
+    }
+}
+
+/// Keeps native icon requests on their original origin, including redirects that WebKit never sees.
+private final class IconRedirects: NSObject, URLSessionTaskDelegate {
+    func urlSession(
+        _ session: URLSession, task: URLSessionTask, willPerformHTTPRedirection response: HTTPURLResponse,
+        newRequest request: URLRequest, completionHandler: @escaping (URLRequest?) -> Void
+    ) {
+        guard let original = task.originalRequest?.url, let target = request.url,
+            BrowsingSecurity.origin(original) == BrowsingSecurity.origin(target)
+        else { return completionHandler(nil) }
+        completionHandler(request)
     }
 }

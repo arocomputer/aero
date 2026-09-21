@@ -24,6 +24,24 @@
 	<true/>
 	<key>NSPrincipalClass</key>
 	<string>NSApplication</string>
+	<key>SUFeedURL</key>
+	<string>https://aerobrowser.app/appcast.xml</string>
+	<key>SUPublicEDKey</key>
+	<string>__UPDATE_PUBLIC_KEY__</string>
+	<key>BrowserProtectionListURL</key>
+	<string>https://aerobrowser.app/protection/Trackers.txt</string>
+	<key>SUEnableInstallerLauncherService</key>
+	<true/>
+	<key>SUVerifyUpdateBeforeExtraction</key>
+	<true/>
+	<key>SURequireSignedFeed</key>
+	<true/>
+	<key>SUEnableAutomaticChecks</key>
+	<false/>
+	<key>SUEnableSystemProfiling</key>
+	<false/>
+	<key>LSFileQuarantineEnabled</key>
+	<true/>
 	<key>NSCameraUsageDescription</key>
 	<string>Websites you allow can use your camera for calls, recording, and identity checks.</string>
 	<key>NSMicrophoneUsageDescription</key>

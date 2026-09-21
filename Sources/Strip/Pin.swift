@@ -1,7 +1,7 @@
 import AppKit
 
 /// A pinned tab, shown as its site's icon, or the first letter of its site when it has none. Click
-/// selects it; the context menu unpins it.
+/// selects it; the context menu exposes site information and unpinning.
 final class Pin: NSView, TabItem {
     private(set) weak var tab: Tab?
     var letter = "" { didSet { if letter != oldValue { label.stringValue = letter } } }
@@ -17,6 +17,7 @@ final class Pin: NSView, TabItem {
     var isActive = false { didSet { if isActive != oldValue { needsDisplay = true } } }
     var onSelect: (() -> Void)?
     var onUnpin: (() -> Void)?
+    var onSiteInformation: (() -> Void)?
     private let label = NSTextField(labelWithString: "")
     private let iconView = NSImageView()
 
@@ -31,9 +32,6 @@ final class Pin: NSView, TabItem {
         iconView.contentTintColor = .textColor
         [label, iconView].forEach(addSubview)
 
-        let menu = NSMenu()
-        menu.addItem(withTitle: "Unpin Tab", action: #selector(unpinClicked), keyEquivalent: "").target = self
-        self.menu = menu
     }
 
     required init?(coder: NSCoder) { fatalError("not used") }
@@ -58,5 +56,15 @@ final class Pin: NSView, TabItem {
 
     override func mouseDown(with event: NSEvent) { onSelect?() }
 
+    override func menu(for event: NSEvent) -> NSMenu? {
+        let menu = NSMenu()
+        if AddressInput.isWeb(tab?.url) {
+            menu.addItem(withTitle: "Site Information…", action: #selector(informationClicked), keyEquivalent: "").target = self
+        }
+        menu.addItem(withTitle: "Unpin Tab", action: #selector(unpinClicked), keyEquivalent: "").target = self
+        return menu
+    }
+
     @objc private func unpinClicked() { onUnpin?() }
+    @objc private func informationClicked() { onSiteInformation?() }
 }

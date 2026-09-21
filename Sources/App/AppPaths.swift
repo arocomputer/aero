@@ -2,9 +2,9 @@ import Foundation
 
 /// Directories for Aero-owned data. Callers keep each feature's filenames and storage rules local.
 enum AppPaths {
-    /// Copies data from the earlier bundle identity once, before WebKit or app storage is opened.
+    /// Copies data from the earlier bundle identity once. Development builds never import browsing data.
     static func migratePreviousIdentity() {
-        guard let current = Bundle.main.bundleIdentifier else { return }
+        guard let current = Bundle.main.bundleIdentifier, !current.hasSuffix(".dev") else { return }
         let previous = ["com", "fschrhunt", ["a", "r", "o"].joined()].joined(separator: ".")
         guard current != previous else { return }
 

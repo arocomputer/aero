@@ -30,6 +30,8 @@ final class Strip: NSView {
     private let plusButton = StripButton(symbol: "plus", pointSize: 13)
     private let downloadsButton = StripButton(symbol: "arrow.down.circle", pointSize: 14, weight: .medium)
     private let menuButton = StripButton(symbol: "ellipsis", pointSize: 15, weight: .bold)
+    private let privateLabel = NSTextField(labelWithString: "Private")
+    private let groupIcon = NSImage(systemSymbolName: "rectangle.3.group", accessibilityDescription: "Tab group")
     var showsDownloads = false {
         didSet {
             guard showsDownloads != oldValue else { return }
@@ -50,7 +52,12 @@ final class Strip: NSView {
         forwardButton.onClick = { [weak self] in self?.controller?.goForwardInHistory(nil) }
         reloadButton.toolTip = "Reload"
         reloadButton.onClick = { [weak self] in self?.controller?.reloadPage(nil) }
-        [separator, backButton, forwardButton, reloadButton].forEach(addSubview)
+        privateLabel.font = .systemFont(ofSize: 11, weight: .medium)
+        privateLabel.textColor = .secondaryLabelColor
+        privateLabel.toolTip =
+            "Private browsing. Closing this window discards website storage and stops unfinished downloads. Completed files remain."
+        privateLabel.isHidden = true
+        [separator, backButton, forwardButton, reloadButton, privateLabel].forEach(addSubview)
         plusButton.onClick = { [weak self] in self?.controller?.newTab(nil) }
         plusButton.alphaValue = 0
         addSubview(plusButton)
@@ -112,22 +119,55 @@ final class Strip: NSView {
 
     /// Brings pinned items and pills in line with the controller's tabs (pinned ones first), animating
     /// what moved. This runs on every title and progress tick of every tab, so it only compares: each
-    /// view is made once for its tab, its setters do nothing for a value they already show, and frames
-    /// are touched only when the arrangement changed.
+    /// visible views are reused, their setters ignore unchanged values, and frames change only when
+    /// the arrangement changes. Collapsed groups expose one representative item.
     func update(tabs: [Tab], active: Tab?) {
         var pinned: [Tab] = [], ordinary: [Tab] = []
-        for tab in tabs { if tab.isPinned { pinned.append(tab) } else { ordinary.append(tab) } }
+        var groupCounts: [String: Int] = [:]
+        for tab in tabs {
+            if tab.isPinned { pinned.append(tab) } else { ordinary.append(tab) }
+            if let group = tab.groupName { groupCounts[group, default: 0] += 1 }
+        }
+        let collapsed = controller?.collapsedGroups ?? []
+        var seen: Set<String> = []
+        ordinary = ordinary.compactMap { tab in
+            guard let group = tab.groupName, collapsed.contains(group) else { return tab }
+            guard seen.insert(group).inserted else { return nil }
+            return active?.groupName == group ? active : tab
+        }
         pins = matched(pins, to: pinned) { [weak self] tab in
             let button = Pin(tab: tab)
             button.onSelect = { [weak self, weak tab] in tab.map { self?.controller?.select($0) } }
             button.onUnpin = { [weak self, weak tab] in tab.map { self?.controller?.setPinned(false, tab: $0) } }
+            button.onSiteInformation = { [weak self, weak tab, weak button] in
+                guard let tab, let button else { return }
+                self?.controller?.showSiteInformation(for: tab, relativeTo: button)
+            }
             return button
         }
         pills = matched(pills, to: ordinary) { [weak self] tab in
             let pill = Pill(tab: tab)
-            pill.onSelect = { [weak self, weak tab] in tab.map { self?.controller?.select($0) } }
-            pill.onClose = { [weak self, weak tab] in tab.map { self?.controller?.close($0) } }
+            pill.onSelect = { [weak self, weak tab] in
+                guard let tab, let controller = self?.controller else { return }
+                if let group = tab.groupName, controller.collapsedGroups.contains(group) {
+                    controller.toggleGroup(group)
+                } else {
+                    controller.select(tab)
+                }
+            }
+            pill.onClose = { [weak self, weak tab] in
+                guard let tab, let controller = self?.controller else { return }
+                if let group = tab.groupName, controller.collapsedGroups.contains(group) {
+                    controller.closeGroup(named: group)
+                } else {
+                    controller.close(tab)
+                }
+            }
             pill.onPin = { [weak self, weak tab] in tab.map { self?.controller?.setPinned(true, tab: $0) } }
+            pill.onSiteInformation = { [weak self, weak tab, weak pill] in
+                guard let tab, let pill else { return }
+                self?.controller?.showSiteInformation(for: tab, relativeTo: pill)
+            }
             return pill
         }
         activeItem = nil
@@ -143,12 +183,16 @@ final class Strip: NSView {
             if tab === active { activeItem = button }
         }
         for (pill, tab) in zip(pills, ordinary) {
-            pill.title = tab.title
-            pill.icon = tab.favicon
+            pill.representsGroup = tab.groupName.map { collapsed.contains($0) } ?? false
+            pill.title =
+                tab.groupName.map { group in
+                    pill.representsGroup ? "\(group) · \(groupCounts[group] ?? 0) tabs" : "\(group) · \(tab.title)"
+                } ?? tab.title
+            pill.icon = pill.representsGroup ? groupIcon : tab.favicon
             pill.isActive = tab === active
             pill.progress = tab.webView.estimatedProgress
             pill.isLoading = tab.webView.isLoading
-            pill.canPin = !tab.isBlank
+            pill.canPin = !pill.representsGroup && !tab.isBlank && tab.recordsActivity
             if tab === active { activeItem = pill }
         }
         let arrangement = Arrangement(
@@ -196,6 +240,11 @@ final class Strip: NSView {
                 x: x, y: (bounds.height - StripMetrics.arrowSize) / 2 - StripMetrics.topLift,
                 width: StripMetrics.arrowSize, height: StripMetrics.arrowSize)
             x += StripMetrics.arrowSize + 2
+        }
+        privateLabel.isHidden = controller?.isPrivate != true
+        if !privateLabel.isHidden {
+            privateLabel.frame = NSRect(x: x + 4, y: y + 8, width: 48, height: 16)
+            x += 56
         }
         x += 8
         for button in pins {

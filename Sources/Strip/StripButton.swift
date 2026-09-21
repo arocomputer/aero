@@ -16,6 +16,7 @@ final class StripButton: NSView {
         icon = NSImageView(image: image)
         super.init(frame: .zero)
         wantsLayer = true
+        setAccessibilityRole(.button)
         icon.frameCenterRotation = rotation
         addSubview(icon)
         addTrackingArea(
@@ -50,5 +51,11 @@ final class StripButton: NSView {
 
     override func mouseUp(with event: NSEvent) {
         if isEnabled, bounds.contains(convert(event.locationInWindow, from: nil)) { onClick?() }
+    }
+
+    override func accessibilityPerformPress() -> Bool {
+        guard isEnabled else { return false }
+        onClick?()
+        return true
     }
 }

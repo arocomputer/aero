@@ -6,5 +6,9 @@
 	<true/>
 	<key>com.apple.developer.web-browser.public-key-credential</key>
 	<true/>
+	<key>com.apple.developer.networking.networkextension</key>
+	<array>
+		<string>dns-settings</string>
+	</array>
 </dict>
 </plist>

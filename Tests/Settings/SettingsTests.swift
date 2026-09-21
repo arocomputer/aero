@@ -8,6 +8,7 @@ func searchEnginesEncodeQueries(_ engine: SearchEngine) throws {
     let query = try #require(URLComponents(url: url, resolvingAgainstBaseURL: false)?.queryItems)
     #expect(query.first(where: { $0.name == "q" })?.value == "swift webkit & appkit")
     #expect(engine.owns(url))
+    #expect(engine.url(for: "C++").absoluteString.contains("C%2B%2B"))
 }
 
 /// Every engine recognizing its own result pages is pinned above, which is what keeps searches out of
