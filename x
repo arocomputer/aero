@@ -73,7 +73,9 @@ case "$command" in
   test)
     # With only the Command Line Tools installed, SwiftPM does not always find the Swift Testing macro
     # plugin. Naming its folder is harmless when Xcode is present.
-    swift_with_selected_sdk test -Xswiftc -plugin-path -Xswiftc "$(xcode-select -p)/usr/lib/swift/host/plugins/testing" "$@"
+    # AppKit tests share the main thread and create WebKit processes. Running them sequentially
+    # avoids starving page callbacks when the expanded suite runs on a small CI runner.
+    swift_with_selected_sdk test --no-parallel -Xswiftc -plugin-path -Xswiftc "$(xcode-select -p)/usr/lib/swift/host/plugins/testing" "$@"
     ;;
   shot)
     # Writes a picture of a real browser window to a file without ever putting one on screen; see
