@@ -22,12 +22,16 @@ import WebKit
 func windowShot() async throws {
     let environment = ProcessInfo.processInfo.environment
     let address = environment["AERO_SHOT_URL"] ?? "about:blank"
-    let url = try #require(AddressInput.url(for: address), "AERO_SHOT_URL is not an address: \(address)")
+    let explicit = URL(string: address)
+    let url = try #require(
+        explicit?.scheme == "aero" ? explicit : AddressInput.url(for: address), "AERO_SHOT_URL is not an address: \(address)")
     let output = URL(fileURLWithPath: environment["AERO_SHOT_OUTPUT"] ?? "build/shot.png")
     let settle = Double(environment["AERO_SHOT_SETTLE"] ?? "") ?? 4
     let size = shotSize(environment["AERO_SHOT_SIZE"])
 
-    let controller = WindowController()
+    // Ephemeral browsing keeps captures out of history and uses neither saved cookies nor pins.
+    let controller = WindowController(
+        isPrivate: true, configuration: Tab.configuration(ephemeral: true), restorePins: false)
     let window = try #require(controller.window)
     window.setContentSize(size)
     let tab = try #require(controller.active)

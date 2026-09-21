@@ -1,0 +1,11 @@
+Tracker domains supplied by Peter Lowe, pgl@yoyo.org.
+Source: https://pgl.yoyo.org/as/
+Only entries marked as trackers are included. Aero converts those hostnames into
+third-party WebKit request-blocking rules. The retrieval date is in Trackers.txt.
+
+The source page grants permission to combine and redistribute the list:
+"Feel free to combine this list with yours or lists from other sites and put it
+up on the web, though!"
+Retrieved September 20, 2026.
+
+This permission applies to the domain list. Aero's code retains its MIT license.

@@ -6,7 +6,7 @@ import WebKit
 
 /// An extension names and describes itself, and Aero shows those words on a page that can install and
 /// remove extensions. They are text, never markup, or an extension could write its own buttons there.
-@Test func anExtensionsOwnWordsCannotBecomeMarkupInTheCatalog() {
+@MainActor @Test func anExtensionsOwnWordsCannotBecomeMarkupInTheCatalog() {
     let card = ExtensionCatalog.cardHTML(
         name: #"<img src=x onerror=alert(1)>"#, summary: #"Says "hello" & <b>waves</b>"#,
         category: "installed", icon: #"https://a.example/i.png" onload="x"#,

@@ -11,6 +11,8 @@ final class Omnibox: NSView, NSTextFieldDelegate {
     var onNavigate: ((URL) -> Void)?
     var onDismiss: (() -> Void)?
     var onTextChange: ((String) -> Void)?
+    var allowsRemoteSuggestions = false { didSet { if !allowsRemoteSuggestions { suggestionTask?.cancel() } } }
+    private var suggestionTask: Task<Void, Never>?
 
     private let fieldBox = CardView()
     private let field = NSTextField()
@@ -64,6 +66,7 @@ final class Omnibox: NSView, NSTextFieldDelegate {
     /// Shows the field with `text` selected and takes keyboard focus. `overPage` makes the backdrop
     /// transparent and dismissible; otherwise it is the opaque blank-tab page.
     func present(text: String, overPage: Bool) {
+        suggestionTask?.cancel()
         isOverPage = overPage
         needsDisplay = true
         field.stringValue = text
@@ -81,6 +84,7 @@ final class Omnibox: NSView, NSTextFieldDelegate {
     }
 
     func dismiss() {
+        suggestionTask?.cancel()
         isHidden = true
     }
 
@@ -132,6 +136,20 @@ final class Omnibox: NSView, NSTextFieldDelegate {
         }
         skipCompletion = false
         updateSearchHint()
+        suggestionTask?.cancel()
+        if allowsRemoteSuggestions, UserDefaults.standard.bool(forKey: "RemoteSuggestions") {
+            let query = typed
+            suggestionTask = Task { @MainActor [weak self] in
+                do { try await Task.sleep(for: .milliseconds(200)) } catch { return }
+                let suggestions = await SearchSuggestions.fetch(query)
+                guard let self, !Task.isCancelled, allowsRemoteSuggestions, UserDefaults.standard.bool(forKey: "RemoteSuggestions"),
+                    !isHidden, typed == query, selected == nil
+                else { return }
+                let seen = Set(entries.map(\.url))
+                entries = Array((entries + suggestions.filter { !seen.contains($0.url) }).prefix(5))
+                rebuildRows()
+            }
+        }
     }
 
     func control(_ control: NSControl, textView: NSTextView, doCommandBy selector: Selector) -> Bool {
@@ -207,7 +225,7 @@ final class Omnibox: NSView, NSTextFieldDelegate {
     /// Shows the search provider after a query without adding a duplicate suggestion row.
     private func updateSearchHint() {
         let isSearch = AddressInput.url(for: typed).map(AddressInput.isSearchURL) == true
-        searchHint.stringValue = Settings.searchEngine.name
+        searchHint.stringValue = CustomSearch.name(for: typed)
         searchHint.isHidden = !isSearch || selected != nil
         placeSearchHint()
     }
@@ -232,7 +250,7 @@ final class Omnibox: NSView, NSTextFieldDelegate {
 private final class SearchHint: NSTextField {
     init() {
         super.init(frame: .zero)
-        stringValue = Settings.searchEngine.name
+        stringValue = CustomSearch.name
         isBordered = false
         drawsBackground = false
         isEditable = false

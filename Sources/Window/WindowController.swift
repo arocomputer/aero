@@ -6,9 +6,10 @@ import WebKit
 /// over it. Owns the tabs, pinned ones first; menu commands reach it through the responder chain.
 final class WindowController: NSWindowController, NSWindowDelegate, WKWebExtensionWindow {
     private(set) var tabs: [Tab] = []
-    let downloads = Downloads()
+    let downloads: Downloads
     /// The tab whose page shows. Set only by `select`.
     private(set) var active: Tab?
+    var collapsedGroups: Set<String> = []
     var onClose: (() -> Void)?
 
     let strip = Strip()
@@ -23,9 +24,19 @@ final class WindowController: NSWindowController, NSWindowDelegate, WKWebExtensi
     private weak var menuAnchor: NSView?
     /// Set by `registerWithExtensions`; until then the extension runtime is told nothing.
     var isRegisteredWithExtensions = false
+    let isPrivate: Bool
+    let extensionWindowType: WKWebExtension.WindowType
+    private let privateStore: WKWebsiteDataStore?
 
-    /// Opens a window with one tab: `url` if given, otherwise a blank tab with the address field focused.
-    init(url: URL? = nil) {
+    /// Constructs a hidden window. Extension transfers can start empty and omit saved pins.
+    init(
+        url: URL? = nil, isPrivate: Bool = false, configuration: WKWebViewConfiguration? = nil,
+        windowType: WKWebExtension.WindowType = .normal, restorePins: Bool = true, startsEmpty: Bool = false
+    ) {
+        self.isPrivate = isPrivate
+        extensionWindowType = windowType
+        downloads = isPrivate ? Downloads() : .shared
+        privateStore = isPrivate ? .nonPersistent() : nil
         let window = Window(
             contentRect: NSRect(x: 0, y: 0, width: 1280, height: 820),
             styleMask: [.titled, .closable, .miniaturizable, .resizable, .fullSizeContentView],
@@ -50,7 +61,7 @@ final class WindowController: NSWindowController, NSWindowDelegate, WKWebExtensi
             strip: strip, content: content, linkBubble: linkBubble, omnibox: omnibox, menuPanel: menuPanel, find: find)
         window.contentView = root
         strip.controller = self
-        downloads.onChange = { [weak self] in self?.downloadsDidChange() }
+        downloadsDidChange()
         extensionsDidChange()
         omnibox.onNavigate = { [weak self] in self?.navigate(to: $0) }
         omnibox.onDismiss = { [weak self] in self?.dismissOmnibox() }
@@ -67,26 +78,72 @@ final class WindowController: NSWindowController, NSWindowDelegate, WKWebExtensi
         sleepTimer = Timer.scheduledTimer(withTimeInterval: 60, repeats: true) { [weak self] _ in self?.sleepIdleTabs() }
         sleepTimer?.tolerance = 30
 
-        tabs = PinnedTabs.urls.map { url in
+        tabs = (isPrivate || windowType != .normal || !restorePins ? [] : PinnedTabs.urls).map { url in
             let tab = Tab(pinnedAt: url)
             tab.owner = self
             return tab
         }
-        openTab(url: url)
+        if !startsEmpty { openTab(url: url, configuration: configuration) }
     }
 
     required init?(coder: NSCoder) { fatalError("not used") }
 
     // MARK: Tabs
 
+    /// Transfers a live public tab without closing it or replacing its page. Both windows must be ordinary.
+    @discardableResult
+    func transfer(_ tab: Tab, to index: Int) -> Bool {
+        guard !isPrivate, tab.recordsActivity, let source = tab.owner, !source.isPrivate,
+            let old = source.tabs.firstIndex(where: { $0 === tab })
+        else { return false }
+        if source === self {
+            moveExtensionTab(tab, to: index)
+            return true
+        }
+        let oldPublic = source.tabs.filter(\.recordsActivity).firstIndex { $0 === tab }!
+        tab.webView.removeFromSuperview()
+        source.tabs.remove(at: old)
+        var replacement: Tab?
+        if source.active === tab {
+            source.active = nil
+            replacement = source.tabs.dropFirst(min(old, source.tabs.count)).first ?? source.tabs.last
+        }
+        tab.opener = nil
+        for child in source.tabs where child.opener === tab { child.opener = nil }
+        tab.owner = self
+        tab.hiddenSince = Date()
+        let proposed = WebExtensions.insertionIndex(index, visibility: tabs.map(\.recordsActivity))
+        let pins = tabs.filter(\.isPinned).count
+        tabs.insert(tab, at: tab.isPinned ? min(proposed, pins) : max(proposed, pins))
+        if source.isRegisteredWithExtensions || isRegisteredWithExtensions {
+            WebExtensions.shared.controller.didMoveTab(tab, from: oldPublic, in: source)
+        }
+        if let replacement { source.select(replacement) }
+        if active == nil { select(tab) } else { updateStrip() }
+        if source.tabs.isEmpty { source.close() } else { source.updateStrip() }
+        return true
+    }
+
     /// Adds a tab at the end. With no URL it is blank. Background tabs load without being selected.
     @discardableResult
-    func openTab(url: URL? = nil, configuration: WKWebViewConfiguration? = nil, inBackground: Bool = false) -> Tab {
-        let tab = Tab(configuration: configuration)
+    func openTab(
+        url: URL? = nil, configuration: WKWebViewConfiguration? = nil, inBackground: Bool = false, useNewTabOverride: Bool = true,
+        scriptOpened: Bool = false, opener: Tab? = nil
+    ) -> Tab {
+        let override = useNewTabOverride && !isPrivate && url == nil && configuration == nil ? WebExtensions.shared.newTabContext : nil
+        var configuration = configuration ?? override?.webViewConfiguration
+        if let privateStore {
+            if configuration?.websiteDataStore.isPersistent != false { configuration = Tab.configuration(ephemeral: true) }
+            configuration?.websiteDataStore = privateStore
+            configuration?.webExtensionController = nil
+        }
+        let tab = Tab(configuration: configuration, scriptOpened: scriptOpened)
+        tab.isNewTabOverride = override != nil
         tab.owner = self
+        tab.opener = opener
         tabs.append(tab)
-        if isRegisteredWithExtensions { WebExtensions.shared.controller.didOpenTab(tab) }
-        if let url { tab.load(url) }
+        if isRegisteredWithExtensions, tab.recordsActivity { WebExtensions.shared.controller.didOpenTab(tab) }
+        if let destination = url ?? override?.overrideNewTabPageURL { tab.load(destination) }
         tab.hiddenSince = Date()
         if inBackground { updateStrip() } else { select(tab) }
         return tab
@@ -98,7 +155,8 @@ final class WindowController: NSWindowController, NSWindowDelegate, WKWebExtensi
     }
 
     func select(_ tab: Tab) {
-        guard tab !== active else { return }
+        let expanded = tab.groupName.map { collapsedGroups.remove($0) != nil } ?? false
+        guard tab !== active else { if expanded { updateStrip() }; return }
         menuPanel.dismiss()
         find.dismiss()
         linkBubble.dismiss()
@@ -107,6 +165,7 @@ final class WindowController: NSWindowController, NSWindowDelegate, WKWebExtensi
         previous?.hiddenSince = Date()
         tab.hiddenSince = nil
         active = tab
+        omnibox.allowsRemoteSuggestions = tab.recordsActivity && !isPrivate
         tab.webView.frame = content.bounds
         tab.webView.autoresizingMask = [.width, .height]
         content.addSubview(tab.webView)
@@ -120,9 +179,19 @@ final class WindowController: NSWindowController, NSWindowDelegate, WKWebExtensi
         }
         tabDidChange(tab)
         tab.pageTint.resume()
-        if isRegisteredWithExtensions {
-            WebExtensions.shared.controller.didActivateTab(tab, previousActiveTab: previous)
+        if isRegisteredWithExtensions, tab.recordsActivity {
+            WebExtensions.shared.controller.didActivateTab(tab, previousActiveTab: previous?.recordsActivity == true ? previous : nil)
         }
+    }
+
+    /// Replaces an extension-bound page when its tab begins ordinary browsing.
+    func replaceView(for tab: Tab, previous: WKWebView) {
+        previous.removeFromSuperview()
+        guard tab === active else { return }
+        tab.webView.frame = content.bounds
+        tab.webView.autoresizingMask = [.width, .height]
+        content.addSubview(tab.webView)
+        if !tab.isOmniboxOpen { window?.makeFirstResponder(tab.webView) }
     }
 
     /// Closes the tab and selects its right neighbor (or the left one at the end). Pinned tabs stay:
@@ -135,8 +204,9 @@ final class WindowController: NSWindowController, NSWindowDelegate, WKWebExtensi
             return select(next)
         }
         tab.cancelAuthentication()
+        ClosedTabs.remember(tab)
         tabs.remove(at: index)
-        if isRegisteredWithExtensions { WebExtensions.shared.controller.didCloseTab(tab) }
+        if isRegisteredWithExtensions, tab.recordsActivity { WebExtensions.shared.controller.didCloseTab(tab) }
         if tab === active {
             guard tabs.contains(where: { !$0.isPinned }) else { return close() }
             select(tabs[min(index, tabs.count - 1)])
@@ -167,7 +237,7 @@ final class WindowController: NSWindowController, NSWindowDelegate, WKWebExtensi
 
     /// Called by tabs whenever their title, URL or loading state changes.
     func tabDidChange(_ tab: Tab, extensionProperties: WKWebExtension.TabChangedProperties = []) {
-        if isRegisteredWithExtensions, !extensionProperties.isEmpty {
+        if isRegisteredWithExtensions, tab.recordsActivity, !extensionProperties.isEmpty {
             WebExtensions.shared.controller.didChangeTabProperties(extensionProperties, for: tab)
         }
         updateStrip()
@@ -219,8 +289,9 @@ final class WindowController: NSWindowController, NSWindowDelegate, WKWebExtensi
     }
 
     /// Lets tabs hidden for `minimum` give up their pages; see `Tab.sleepIfIdle`.
-    func sleepIdleTabs(hiddenFor minimum: TimeInterval = Tab.sleepAfter) {
-        tabs.forEach { $0.sleepIfIdle(hiddenFor: minimum) }
+    func sleepIdleTabs(hiddenFor minimum: TimeInterval? = nil) {
+        guard Settings.sleepTabs else { return }
+        tabs.forEach { $0.sleepIfIdle(hiddenFor: minimum ?? Double(Settings.sleepMinutes) * 60) }
     }
 
     /// Shows or drops the tabs' icons after the favicons setting changes.
@@ -230,6 +301,7 @@ final class WindowController: NSWindowController, NSWindowDelegate, WKWebExtensi
     }
 
     func updateStrip() {
+        (NSApp.delegate as? AppDelegate)?.scheduleSessionSave()
         strip.update(tabs: tabs, active: active)
         if menuPanel.isPresented { menuPanel.update(state: menuState) }
     }
@@ -249,7 +321,7 @@ final class WindowController: NSWindowController, NSWindowDelegate, WKWebExtensi
         MenuState(
             isLoading: active?.webView.isLoading ?? false,
             hasPage: active?.isBlank == false,
-            canPin: active?.isBlank == false,
+            canPin: active?.isBlank == false && active?.recordsActivity == true,
             isPinned: active?.isPinned ?? false,
             zoom: active?.webView.pageZoom ?? 1,
             isFullScreen: window?.styleMask.contains(.fullScreen) ?? false)
@@ -259,6 +331,15 @@ final class WindowController: NSWindowController, NSWindowDelegate, WKWebExtensi
         switch action {
         case .newTab: newTab(nil)
         case .newWindow: (NSApp.delegate as? AppDelegate)?.newWindow(nil)
+        case .newPrivateWindow: (NSApp.delegate as? AppDelegate)?.newPrivateWindow(nil)
+        case .history: openHistoryPage(nil)
+        case .bookmarks: openBookmarksPage(nil)
+        case .bookmarkPage: bookmarkPage(nil)
+        case .tabGroups: showTabGroups(nil)
+        case .reopenClosedTab: reopenClosedTab(nil)
+        case .downloads: openDownloads(nil)
+        case .clearBrowsingData: deleteBrowsingData(nil)
+        case .about: NSApp.orderFrontStandardAboutPanel(nil)
         case .openLocation: openLocation(nil)
         case .find: findPage(nil)
         case .reloadOrStop:
@@ -294,12 +375,34 @@ final class WindowController: NSWindowController, NSWindowDelegate, WKWebExtensi
 
     // MARK: Pins
 
+    /// Moves a tab without crossing the pinned boundary and reports its former index to extensions.
+    func move(_ tab: Tab, to index: Int) {
+        guard let old = tabs.firstIndex(where: { $0 === tab }) else { return }
+        let oldPublic = tabs.filter(\.recordsActivity).firstIndex { $0 === tab }
+        tabs.remove(at: old)
+        let pinCount = tabs.filter(\.isPinned).count
+        let target = tab.isPinned ? min(max(0, index), pinCount) : min(max(pinCount, index), tabs.count)
+        tabs.insert(tab, at: target)
+        if isRegisteredWithExtensions, let oldPublic { WebExtensions.shared.controller.didMoveTab(tab, from: oldPublic, in: self) }
+        updateStrip()
+    }
+
+    @objc func reopenClosedTab(_ sender: Any?) {
+        guard !isPrivate, let entry = ClosedTabs.take() else { return }
+        let tab = openTab(inBackground: true, useNewTabOverride: false)
+        tab.groupName = entry.group
+        tab.restore(url: entry.url, state: entry.state)
+        select(tab)
+        updateStrip()
+    }
+
     /// Pins the tab at its current address, moving it to the end of the pinned tabs, or unpins it,
-    /// making it the first ordinary tab. Blank tabs can't be pinned.
+    /// making it the first ordinary tab. Blank and ephemeral tabs can't be pinned.
     func setPinned(_ pinned: Bool, tab: Tab) {
         guard pinned != tab.isPinned, let index = tabs.firstIndex(where: { $0 === tab }) else { return }
         if pinned {
-            guard let url = tab.url else { return }
+            guard tab.recordsActivity, let url = tab.url else { return }
+            tab.groupName = nil
             tab.pinnedURL = url
             PinnedTabs.urls.append(url)
         } else {
@@ -369,8 +472,8 @@ final class WindowController: NSWindowController, NSWindowDelegate, WKWebExtensi
 
     private func setPageZoom(_ zoom: CGFloat) {
         guard let active else { return }
-        active.webView.pageZoom = zoom
-        if isRegisteredWithExtensions {
+        active.setUserZoom(zoom)
+        if isRegisteredWithExtensions, active.recordsActivity {
             WebExtensions.shared.controller.didChangeTabProperties(.zoomFactor, for: active)
         }
     }
@@ -388,8 +491,9 @@ final class WindowController: NSWindowController, NSWindowDelegate, WKWebExtensi
     func allowsWindowZoom(at pointInWindow: NSPoint) -> Bool { strip.allowsWindowZoom(at: pointInWindow) }
 
     func windowWillClose(_ notification: Notification) {
+        if isPrivate { downloads.endPrivateSession() }
         if isRegisteredWithExtensions {
-            tabs.forEach { WebExtensions.shared.controller.didCloseTab($0, windowIsClosing: true) }
+            tabs.filter(\.recordsActivity).forEach { WebExtensions.shared.controller.didCloseTab($0, windowIsClosing: true) }
             WebExtensions.shared.controller.didCloseWindow(self)
         }
         scrollMonitor.map(NSEvent.removeMonitor)
@@ -405,9 +509,14 @@ final class WindowController: NSWindowController, NSWindowDelegate, WKWebExtensi
     // The system puts the traffic lights back at their own size whenever it lays the titlebar out again.
     func windowDidBecomeKey(_ notification: Notification) {
         window?.contentView?.needsLayout = true
-        WebExtensions.shared.controller.didFocusWindow(self)
+        WebExtensions.shared.controller.didFocusWindow(extensionFocusTarget)
     }
-    func windowDidResignKey(_ notification: Notification) { window?.contentView?.needsLayout = true }
+    func windowDidResignKey(_ notification: Notification) {
+        window?.contentView?.needsLayout = true
+        WebExtensions.shared.controller.didFocusWindow(nil)
+    }
+    func windowDidResize(_ notification: Notification) { (NSApp.delegate as? AppDelegate)?.scheduleSessionSave() }
+    func windowDidMove(_ notification: Notification) { (NSApp.delegate as? AppDelegate)?.scheduleSessionSave() }
     func windowDidEnterFullScreen(_ notification: Notification) { window?.contentView?.needsLayout = true }
     func windowDidExitFullScreen(_ notification: Notification) { window?.contentView?.needsLayout = true }
 }

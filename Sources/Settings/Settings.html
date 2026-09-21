@@ -1,193 +1,639 @@
 <!doctype html>
 <html lang="en">
-<head>
-  <meta charset="utf-8">
-  <meta name="viewport" content="width=device-width, initial-scale=1">
-  <title>{{appName}} Settings</title>
-  <style>
-    :root {
-      color-scheme: light dark;
-      font: 14px -apple-system, BlinkMacSystemFont, sans-serif;
-      --page: #f7f7f8; --sidebar: #efeff1; --surface: #fff; --surface-hover: #f4f4f6;
-      --text: #1c1c1e; --muted: #74747b; --line: #dfdfe3; --control: #ededf0;
-      --accent: #2671e8; --danger: #d93232; --shadow: 0 1px 2px rgba(18,18,22,.04);
-    }
-    * { box-sizing: border-box; }
-    html, body { min-height: 100%; }
-    body { margin: 0; background: var(--page); color: var(--text); }
-    button, input, select { font: inherit; }
-    .chrome-tone { position: fixed; inset: 0 0 auto; z-index: 8; height: 12px; background: var(--sidebar); pointer-events: none; }
-    .shell { min-height: 100vh; display: grid; grid-template-columns: 218px minmax(0, 1fr); }
-    aside { position: sticky; top: 0; height: 100vh; padding: 25px 14px 18px; background: var(--sidebar); border-right: 1px solid var(--line); display: flex; flex-direction: column; }
-    .brand { height: 36px; display: flex; align-items: center; gap: 9px; padding: 0 9px; margin-bottom: 15px; font-size: 18px; font-weight: 670; letter-spacing: -.025em; }
-    .mark { width: 19px; height: 17px; display: grid; place-items: center; }
-    .mark svg { width: 100%; height: 100%; }
-    nav { display: grid; gap: 2px; }
-    nav a { min-height: 36px; padding: 0 10px; border-radius: 9px; display: flex; align-items: center; gap: 10px; color: var(--muted); text-decoration: none; font-size: 13px; font-weight: 560; }
-    nav a:hover { background: rgba(127,127,137,.1); color: var(--text); }
-    nav a.active { background: rgba(127,127,137,.14); color: var(--text); }
-    nav img { width: 16px; height: 16px; object-fit: contain; opacity: .68; flex: none; }
-    nav a.active img { opacity: .9; }
-    .nav-separator { height: 1px; background: var(--line); margin: 10px 9px; }
-    .workspace { min-width: 0; }
-    .topbar { position: sticky; top: 0; z-index: 3; height: 70px; display: flex; align-items: center; justify-content: center; padding: 14px 36px; background: var(--page); }
-    .search { width: min(620px, 100%); height: 40px; display: flex; align-items: center; gap: 10px; padding: 0 14px; background: var(--surface); border: 1px solid var(--line); border-radius: 11px; box-shadow: var(--shadow); }
-    .search img { width: 15px; height: 15px; opacity: .55; }
-    .search input { width: 100%; border: 0; outline: 0; background: transparent; color: var(--text); }
-    .search input::placeholder { color: var(--muted); }
-    main { width: min(700px, calc(100% - 56px)); margin: 26px auto 72px; }
-    .panel { display: none; }
-    .panel.active { display: block; animation: reveal .14s ease-out; }
-    @keyframes reveal { from { opacity: 0; transform: translateY(3px); } }
-    .heading { margin-bottom: 22px; }
-    h1 { margin: 0; font-size: 23px; line-height: 1.2; letter-spacing: -.03em; }
-    .heading p { margin: 6px 0 0; color: var(--muted); font-size: 13px; line-height: 1.45; }
-    .group { margin-bottom: 24px; }
-    .group h2 { margin: 0 0 8px 2px; font-size: 12px; font-weight: 610; color: var(--muted); }
-    .card { overflow: hidden; background: var(--surface); border: 1px solid var(--line); border-radius: 12px; box-shadow: var(--shadow); }
-    .row { min-height: 64px; padding: 13px 15px; display: flex; align-items: center; justify-content: space-between; gap: 24px; }
-    .row + .row { border-top: 1px solid var(--line); }
-    .copy { min-width: 0; }
-    .title { font-size: 13px; font-weight: 610; }
-    .detail { margin-top: 3px; color: var(--muted); font-size: 12px; line-height: 1.4; }
-    .control { flex: none; display: flex; align-items: center; gap: 8px; }
-    input[switch] { margin: 0; accent-color: var(--accent); cursor: pointer; }
-    select, .button { appearance: none; border: 1px solid transparent; border-radius: 8px; background: var(--control); color: var(--text); padding: 7px 11px; font-size: 13px; font-weight: 590; text-decoration: none; cursor: pointer; }
-    select { min-width: 138px; padding-right: 31px; background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='12' height='8'%3E%3Cpath d='m1 1 5 5 5-5' fill='none' stroke='%23777' stroke-width='1.5'/%3E%3C/svg%3E"); background-repeat: no-repeat; background-position: right 10px center; }
-    select:hover, .button:hover { background-color: var(--surface-hover); border-color: var(--line); }
-    .button.primary { background: var(--accent); color: white; }
-    .button.primary:hover { background: #1765d8; border-color: transparent; }
-    .button.danger { color: var(--danger); }
-    .version { color: var(--muted); font-size: 13px; white-space: nowrap; }
-    .no-results { display: none; padding: 72px 20px; text-align: center; color: var(--muted); }
-    body.searching .panel { display: block; margin-bottom: 42px; }
-    body.searching .panel .heading { display: none; }
-    body.searching .panel:not(.has-match), body.searching .group:not(.has-match), body.searching .row:not(.match) { display: none; }
-    body.searching .panel.has-match, body.searching .group.has-match { display: block; }
-    body.searching .row.match { display: flex; }
-    @media (prefers-color-scheme: dark) {
-      :root { --page: #141517; --sidebar: #1a1b1d; --surface: #202124; --surface-hover: #2b2c30; --text: #f1f1f3; --muted: #9999a1; --line: #323337; --control: #303136; --accent: #4f8df3; --danger: #ff6961; --shadow: 0 1px 2px rgba(0,0,0,.16); }
-      nav img, .search img { filter: invert(1); }
-      nav a.active { background: #292a2e; }
-    }
-    @media (max-width: 760px) {
-      .shell { display: block; }
-      aside { position: static; width: 100%; height: auto; padding: 18px; }
-      .brand { margin-bottom: 10px; }
-      nav { grid-auto-flow: column; overflow-x: auto; padding-bottom: 3px; }
-      nav a { white-space: nowrap; }
-      .nav-separator { display: none; }
-      .topbar { height: 74px; padding: 14px 20px; }
-      main { width: calc(100% - 40px); margin-top: 20px; }
-      .row { align-items: flex-start; flex-direction: column; gap: 13px; }
-    }
-  </style>
-</head>
-<body>
-  <div class="chrome-tone" aria-hidden="true"></div>
-  <div class="shell">
-    <aside>
-      <div class="brand"><span class="mark">{{mark}}</span><span>Settings</span></div>
-      <nav aria-label="Settings sections">
-        <a href="#general" data-panel="general"><img src="{{iconGeneral}}" alt="">General</a>
-        <a href="#search-engine" data-panel="search-engine"><img src="{{iconSearch}}" alt="">Search engine</a>
-        <a href="#privacy" data-panel="privacy"><img src="{{iconPrivacy}}" alt="">Privacy and security</a>
-        <a href="#downloads" data-panel="downloads"><img src="{{iconDownloads}}" alt="">Downloads</a>
-        <div class="nav-separator"></div>
-        <a href="#extensions" data-panel="extensions"><img src="{{iconExtensions}}" alt="">Extensions</a>
-        <a href="#about" data-panel="about"><img src="{{iconAbout}}" alt="">About {{appName}}</a>
-      </nav>
-    </aside>
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <meta
+      http-equiv="Content-Security-Policy"
+      content="default-src 'none'; style-src 'unsafe-inline'; script-src 'unsafe-inline'; img-src data:; base-uri 'none'; form-action 'none'"
+    />
+    <title>{{appName}} Settings</title>
+    <style>
+      {{styles}}
+    </style>
+  </head>
+  <body>
+    <div class="shell">
+      <!-- Persistent section navigation. Links also work as direct fragment destinations. -->
+      <aside class="sidebar" aria-label="Settings navigation">
+        <div class="sidebar-title">Settings</div>
+        <nav>
+          <a href="#general" data-panel-link>General</a>
+          <a href="#appearance" data-panel-link>Appearance</a>
+          <a href="#search" data-panel-link>Search</a>
+          <a href="#privacy" data-panel-link>Privacy and security</a>
+          <a href="#downloads" data-panel-link>Downloads</a>
+          <a href="#performance" data-panel-link>Performance</a>
+          <a href="#languages" data-panel-link>Languages</a>
+          <a href="#accessibility" data-panel-link>Accessibility</a>
+          <a href="#reset" data-panel-link>Reset settings</a>
+          <a href="aero://extensions">Extensions ↗</a>
+        </nav>
+        <a class="bottom-link" href="#about" data-panel-link>
+          About {{appName}}
+        </a>
+      </aside>
 
-    <div class="workspace">
-      <div class="topbar">
-        <label class="search"><img src="{{iconSearch}}" alt=""><input id="settings-search" type="search" placeholder="Search settings" autocomplete="off"></label>
-      </div>
-      <main>
-        <section class="panel" id="general" data-title="General appearance theme site icons favicons default browser">
-          <div class="heading"><h1>General</h1><p>Choose how {{appName}} looks and which links open in it.</p></div>
-          <div class="group">
-            <h2>Appearance</h2>
-            <div class="card"><div class="row" data-search="appearance theme system light dark"><div class="copy"><div class="title">Appearance</div><div class="detail">Use the macOS appearance or keep {{appName}} light or dark.</div></div><div class="control"><select aria-label="Appearance" onchange="location.href='aero://settings/action/appearance?value='+encodeURIComponent(this.value)">{{appearances}}</select></div></div>
-            <div class="row" data-search="site icons favicons tabs address field suggestions"><div class="copy"><div class="title">Site icons</div><div class="detail">Show each site's icon in tabs and address-field suggestions.</div></div><div class="control"><input type="checkbox" switch aria-label="Site icons"{{faviconsChecked}} onchange="location.href='aero://settings/action/favicons?value='+(this.checked?'on':'off')"></div></div></div>
-          </div>
-          <div class="group">
-            <h2>Default browser</h2>
-            <div class="card"><div class="row" data-search="default browser links http https"><div class="copy"><div class="title">Default browser</div><div class="detail">{{defaultStatus}}</div></div><div class="control">{{defaultAction}}</div></div></div>
-          </div>
-        </section>
+      <main class="workspace">
+        <div class="content">
+          <input
+            class="search"
+            id="page-search"
+            type="search"
+            placeholder="Search settings"
+            aria-label="Search settings"
+            autocomplete="off"
+          />
 
-        <section class="panel" id="search-engine" data-title="Search engine address field">
-          <div class="heading"><h1>Search engine</h1><p>Pick the service {{appName}} uses when the address field contains a search.</p></div>
-          <div class="group"><h2>Address field</h2><div class="card"><div class="row" data-search="search engine address field google duckduckgo bing brave"><div class="copy"><div class="title">Search engine</div><div class="detail">The provider name appears beside unfinished searches.</div></div><div class="control"><select aria-label="Search engine" onchange="location.href='aero://settings/action/search-engine?value='+encodeURIComponent(this.value)">{{searchEngines}}</select></div></div></div></div>
-        </section>
+          <!-- General: system integration and the next browsing session. -->
+          <section
+            class="panel"
+            id="general"
+            data-panel-content
+            aria-labelledby="general-title"
+          >
+            <header class="page-heading">
+              <h1 id="general-title">General</h1>
+              <p>Choose how {{appName}} fits into your day.</p>
+            </header>
+            <div class="group">
+              <h2>Default browser</h2>
+              <div class="setting-row" data-search-row>
+                <div class="setting-copy">
+                  <span class="setting-title">Open links with {{appName}}</span>
+                  <p>{{defaultStatus}}</p>
+                </div>
+                <div class="controls">{{defaultAction}}</div>
+              </div>
+            </div>
+            <div class="group">
+              <h2>On startup</h2>
+              <div
+                class="setting-row"
+                data-search-row
+                data-keywords="startup session restore tabs"
+              >
+                <div class="setting-copy">
+                  <label for="restore-session">When the browser opens</label>
+                  <p>
+                    Continue the previous session restores ordinary windows and
+                    tab groups, including after an unexpected exit. Form
+                    contents are not saved.
+                  </p>
+                </div>
+                <select id="restore-session" data-setting="startup-mode">
+                  {{startupChoices}}
+                </select>
+              </div>
+              <p class="note">
+                Pinned tabs always reopen in ordinary windows. {{newTabStatus}}
+              </p>
+              <div class="page-actions">
+                <a class="button" href="aero://settings/action/startup-pages">
+                  Edit startup pages…
+                </a>
+                <a
+                  class="button"
+                  href="aero://settings/action/use-current-pages"
+                >
+                  Use current web tabs
+                </a>
+              </div>
+            </div>
+          </section>
 
-        <section class="panel" id="privacy" data-title="Privacy and security history website data cookies cache sign-ins">
-          <div class="heading"><h1>Privacy and security</h1><p>Remove locally stored browsing records and website data.</p></div>
-          <div class="group"><h2>Credentials</h2><div class="card"><div class="row" data-search="passkeys security keys credentials icloud keychain 1password"><div class="copy"><div class="title">Passkeys and security keys</div><div class="detail">{{passkeyStatus}}</div></div><div class="control">{{passkeyAction}}</div></div></div></div>
-          <div class="group"><h2>History</h2><div class="card"><div class="row" data-search="history addresses page titles suggestions clear"><div class="copy"><div class="title">Browsing history</div><div class="detail">Remove addresses, page titles and site icons from address-field suggestions.</div></div><div class="control"><a class="button danger" href="aero://settings/action/clear-history">Clear History…</a></div></div></div></div>
-          <div class="group"><h2>Website data</h2><div class="card"><div class="row" data-search="website data cookies cache local storage sign-ins clear"><div class="copy"><div class="title">Cookies and website data</div><div class="detail">Remove cookies, caches, local storage, and website sign-ins.</div></div><div class="control"><a class="button danger" href="aero://settings/action/clear-website-data">Clear Website Data…</a></div></div></div></div>
-        </section>
+          <!-- Appearance: browser preferences, separate from a website's own theme. -->
+          <section
+            class="panel"
+            id="appearance"
+            data-panel-content
+            aria-labelledby="appearance-title"
+            hidden
+          >
+            <header class="page-heading">
+              <h1 id="appearance-title">Appearance</h1>
+              <p>Keep the browser comfortable to read.</p>
+            </header>
+            <div class="group">
+              <h2>Browser</h2>
+              <div
+                class="setting-row"
+                data-search-row
+                data-keywords="theme light dark system"
+              >
+                <div class="setting-copy">
+                  <label for="appearance-choice">Appearance</label>
+                  <p>Follow macOS or choose a light or dark appearance.</p>
+                </div>
+                <select id="appearance-choice" data-setting="appearance">
+                  {{appearances}}
+                </select>
+              </div>
+              <div
+                class="setting-row"
+                data-search-row
+                data-keywords="favicon icons"
+              >
+                <div class="setting-copy">
+                  <label for="site-icons">Show site icons</label>
+                  <p>Display icons in tabs and address suggestions.</p>
+                </div>
+                <input
+                  id="site-icons"
+                  type="checkbox"
+                  switch
+                  data-setting="favicons"
+                  {{faviconsChecked}}
+                />
+              </div>
+            </div>
+            <div class="group">
+              <h2>Web pages</h2>
+              <div class="setting-row" data-search-row>
+                <div class="setting-copy">
+                  <label for="default-zoom">Default page zoom</label>
+                  <p>
+                    Used for newly opened tabs. Change the current tab's zoom
+                    from the View menu.
+                  </p>
+                </div>
+                <select id="default-zoom" data-setting="default-zoom">
+                  {{zoomChoices}}
+                </select>
+              </div>
+              <p class="note">
+                Browser animations follow the Reduce Motion setting in macOS.
+              </p>
+            </div>
+          </section>
 
-        <section class="panel" id="downloads" data-title="Downloads files folder save Finder">
-          <div class="heading"><h1>Downloads</h1><p>Choose where {{appName}} saves downloaded files.</p></div>
-          <div class="group"><h2>Location</h2><div class="card"><div class="row" data-search="downloads files folder save finder location"><div class="copy"><div class="title">Save files to</div><div class="detail">{{downloadFolder}}</div></div><div class="control"><a class="button" href="aero://settings/action/show-downloads">Show</a><a class="button" href="aero://settings/action/choose-downloads">Choose…</a></div></div></div></div>
-        </section>
+          <!-- Search: provider selection and an explicit description of local suggestions. -->
+          <section
+            class="panel"
+            id="search"
+            data-panel-content
+            aria-labelledby="search-title"
+            hidden
+          >
+            <header class="page-heading">
+              <h1 id="search-title">Search</h1>
+              <p>Choose where your searches go.</p>
+            </header>
+            <div class="group">
+              <h2>Address field</h2>
+              <div
+                class="setting-row"
+                data-search-row
+                data-keywords="google duckduckgo bing brave provider"
+              >
+                <div class="setting-copy">
+                  <label for="search-engine">Search engine</label>
+                  <p>Used when you enter a search instead of an address.</p>
+                </div>
+                <select id="search-engine" data-setting="search-engine">
+                  {{searchEngines}}
+                </select>
+              </div>
+              <div class="setting-row" data-search-row>
+                <div class="setting-copy">
+                  <label for="search-suggestions">
+                    Google search suggestions
+                  </label>
+                  <p>
+                    When Google is selected, send search words while typing.
+                    Addresses and private-tab text are not sent. Local history
+                    suggestions are always available.
+                  </p>
+                </div>
+                <input
+                  id="search-suggestions"
+                  type="checkbox"
+                  switch
+                  data-privacy-setting="RemoteSuggestions"
+                  {{suggestionsChecked}}
+                />
+              </div>
+              <a class="button" href="#search-engines" data-panel-link>
+                Manage search engines and shortcuts…
+              </a>
+            </div>
+          </section>
 
-        <section class="panel" id="extensions" data-title="Extensions WebExtensions add remove configure">
-          <div class="heading"><h1>Extensions</h1><p>Add browser tools and control the extensions installed in {{appName}}.</p></div>
-          <div class="group"><h2>Extension library</h2><div class="card"><div class="row" data-search="extensions webextensions add remove configure 1password"><div class="copy"><div class="title">Manage extensions</div><div class="detail">Find, add, configure, and remove WebExtensions.</div></div><div class="control"><a class="button primary" href="aero://settings/action/extensions">Open Extensions</a></div></div></div></div>
-        </section>
+          <section class="panel" id="search-engines" data-panel-content hidden>
+            <header class="page-heading">
+              <a class="breadcrumb" href="#search" data-panel-link>Search</a>
+              <h1>Site search and custom engines</h1>
+              <p>
+                Use %s in a search URL. Type a shortcut followed by a space and
+                your query to search that site.
+              </p>
+            </header>
+            <a class="button" href="aero://settings/action/edit-search">
+              Add search engine…
+            </a>
+            {{customEngines}}
+          </section>
 
-        <section class="panel" id="about" data-title="About {{appName}} version WebKit macOS">
-          <div class="heading"><h1>About {{appName}}</h1><p>A small native browser built for macOS.</p></div>
-          <div class="group"><h2>Version</h2><div class="card"><div class="row" data-search="about browser version build webkit macos"><div class="copy"><div class="title">{{appName}}</div><div class="detail">Powered by the WebKit included with macOS.</div></div><div class="version">{{version}}</div></div></div></div>
-        </section>
+          <!-- Privacy overview opens focused subpages instead of mixing unrelated controls. -->
+          <section
+            class="panel"
+            id="privacy"
+            data-panel-content
+            aria-labelledby="privacy-title"
+            hidden
+          >
+            <header class="page-heading">
+              <h1 id="privacy-title">Privacy and security</h1>
+            </header>
+            <div class="settings-navigation">
+              <a href="#privacy-data" data-panel-link data-search-row>
+                <img class="navigation-icon" src="{{trashIcon}}" alt="" />
+                <span>
+                  <strong>Delete browsing data</strong>
+                  <small>
+                    History, cookies, cached resources and retention
+                  </small>
+                </span>
+                <span aria-hidden="true">›</span>
+              </a>
+              <a href="#privacy-protection" data-panel-link data-search-row>
+                <img class="navigation-icon" src="{{shieldIcon}}" alt="" />
+                <span>
+                  <strong>Tracker blocking</strong>
+                  <small>
+                    Known tracking requests, protection lists and site
+                    exceptions
+                  </small>
+                </span>
+                <span aria-hidden="true">›</span>
+              </a>
+              <a href="#privacy-network" data-panel-link data-search-row>
+                <img class="navigation-icon" src="{{lockIcon}}" alt="" />
+                <span>
+                  <strong>Network and security</strong>
+                  <small>
+                    Encrypted connections, website warnings and cookies
+                  </small>
+                </span>
+                <span aria-hidden="true">›</span>
+              </a>
+              <a href="aero://settings#websites" data-search-row>
+                <img class="navigation-icon" src="{{sitesIcon}}" alt="" />
+                <span>
+                  <strong>Site settings</strong>
+                  <small>
+                    Permissions, JavaScript, pop-ups and stored data
+                  </small>
+                </span>
+                <span aria-hidden="true">›</span>
+              </a>
+              <a href="#privacy-services" data-panel-link data-search-row>
+                <img class="navigation-icon" src="{{servicesIcon}}" alt="" />
+                <span>
+                  <strong>Browser services</strong>
+                  <small>Control connections made by browser features</small>
+                </span>
+                <span aria-hidden="true">›</span>
+              </a>
+            </div>
+          </section>
+          {{privacyPages}} {{browserPages}}
 
-        <div class="no-results">No settings match your search.</div>
+          <!-- Protection and data deletion have separate destinations and breadcrumb navigation. -->
+          <section
+            class="panel"
+            id="privacy-protection"
+            data-panel-content
+            aria-labelledby="protection-title"
+            hidden
+          >
+            <header class="page-heading">
+              <a class="breadcrumb" href="#privacy" data-panel-link>
+                Privacy and security
+              </a>
+              <h1 id="protection-title">Tracker blocking</h1>
+              <p>
+                Block requests to known third-party tracker domains. WebKit does
+                not expose advanced fingerprinting controls or blocked-request
+                counts to this browser.
+              </p>
+            </header>
+            <div class="group">
+              <h2>Browsing protection</h2>
+              <div class="setting-row" data-search-row>
+                <div class="setting-copy">
+                  <label for="tracker-blocking">Block known trackers</label>
+                  <p>
+                    WebKit blocks known third-party tracking requests using a
+                    bundled list. To make an exception, open Site Information on
+                    a tab.
+                  </p>
+                </div>
+                <input
+                  id="tracker-blocking"
+                  type="checkbox"
+                  switch
+                  data-privacy-setting="TrackerBlocking"
+                  {{trackersChecked}}
+                />
+              </div>
+              <details data-search-row data-detail="tracker-exceptions">
+                <summary>Tracker exceptions · {{exceptionCount}}</summary>
+                <div class="permission-list">{{trackerExceptions}}</div>
+              </details>
+              <p class="note">{{protectionListStatus}}</p>
+              <div class="page-actions">{{protectionUpdateAction}}</div>
+              <p class="note">{{protectionUpdateStatus}}</p>
+            </div>
+          </section>
+          <section
+            class="panel"
+            id="privacy-data"
+            data-panel-content
+            aria-labelledby="data-title"
+            hidden
+          >
+            <header class="page-heading">
+              <a class="breadcrumb" href="#privacy" data-panel-link>
+                Privacy and security
+              </a>
+              <h1 id="data-title">Browsing data</h1>
+              <p>Choose what to keep and what to remove.</p>
+            </header>
+            <div class="group">
+              <h2>History</h2>
+              <div class="setting-row" data-search-row>
+                <div class="setting-copy">
+                  <label for="history-retention">Keep browsing history</label>
+                  <p>
+                    Older addresses are removed automatically. Reducing this
+                    period also clears saved site icons.
+                  </p>
+                </div>
+                <select id="history-retention" data-setting="history-retention">
+                  {{historyChoices}}
+                </select>
+              </div>
+            </div>
+            <div class="group">
+              <h2>Clear browsing data</h2>
+              <div class="setting-row" data-search-row>
+                <div class="setting-copy">
+                  <label for="clear-range">Time range</label>
+                  <p>Applies to the deletion actions below.</p>
+                </div>
+                <select id="clear-range">
+                  <option value="hour">Last hour</option>
+                  <option value="day">Last 24 hours</option>
+                  <option value="week">Last 7 days</option>
+                  <option value="all" selected>All time</option>
+                </select>
+              </div>
+              <div class="setting-row" data-search-row>
+                <div class="setting-copy">
+                  <span class="setting-title">Browsing history</span>
+                  <p>
+                    Remove addresses visited during this period and all saved
+                    site icons. Cookies and sign-ins stay intact.
+                  </p>
+                </div>
+                <button class="danger" type="button" data-clear="clear-history">
+                  Clear history…
+                </button>
+              </div>
+              <div class="setting-row" data-search-row>
+                <div class="setting-copy">
+                  <span class="setting-title">Cookies</span>
+                  <p>
+                    Remove website data modified during this period. This may
+                    sign you out of websites.
+                  </p>
+                </div>
+                <button class="danger" type="button" data-clear="clear-cookies">
+                  Clear cookies…
+                </button>
+              </div>
+              <div class="setting-row" data-search-row>
+                <div class="setting-copy">
+                  <span class="setting-title">Cached resources</span>
+                  <p>
+                    Remove cached images, files and offline response caches.
+                  </p>
+                </div>
+                <button class="danger" type="button" data-clear="clear-cache">
+                  Clear cache…
+                </button>
+              </div>
+              <div class="setting-row" data-search-row>
+                <div class="setting-copy">
+                  <span class="setting-title">Website storage</span>
+                  <p>
+                    Remove local storage, databases and other website data in
+                    the selected period.
+                  </p>
+                </div>
+                <button class="danger" type="button" data-clear="clear-storage">
+                  Clear storage…
+                </button>
+              </div>
+            </div>
+          </section>
+
+          <!-- Websites: permission exceptions are actual saved origin rules, not sample entries. -->
+          <section
+            class="panel"
+            id="websites"
+            data-panel-content
+            aria-labelledby="websites-title"
+            hidden
+          >
+            <header class="page-heading">
+              <a class="breadcrumb" href="#privacy" data-panel-link>
+                Privacy and security
+              </a>
+              <h1 id="websites-title">Websites</h1>
+              <p>Review access to your devices and stored website data.</p>
+            </header>
+            {{sitePolicies}}
+            <div class="group">
+              <h2>Remembered website zoom</h2>
+              <p class="note">
+                Use the View menu to set a site's zoom. Private-tab zoom choices
+                are not saved.
+              </p>
+              {{siteZoomRows}}
+            </div>
+            <p class="note">
+              macOS permission controls still apply. {{locationNote}}
+            </p>
+            <div class="group">
+              <h2>Stored data</h2>
+              <div class="setting-row" data-search-row>
+                <div class="setting-copy">
+                  <span class="setting-title">
+                    Cookies and storage by website
+                  </span>
+                  <p>
+                    Choose a website and remove its cookies and local storage.
+                  </p>
+                </div>
+                <a
+                  class="button"
+                  href="aero://settings/action/manage-website-data"
+                >
+                  Manage…
+                </a>
+              </div>
+            </div>
+            <div class="group">
+              <h2>Passwords and passkeys</h2>
+              <div class="setting-row" data-search-row>
+                <div class="setting-copy">
+                  <span class="setting-title">Passwords</span>
+                  <p>
+                    Open macOS Passwords to view or copy credentials. This does
+                    not enable website autofill in this browser.
+                  </p>
+                </div>
+                <a class="button" href="aero://settings/action/open-passwords">
+                  Open Passwords
+                </a>
+              </div>
+              <div class="setting-row" data-search-row>
+                <div class="setting-copy">
+                  <span class="setting-title">Passkeys and security keys</span>
+                  <p>{{passkeyStatus}}</p>
+                </div>
+                <div class="controls">{{passkeyAction}}</div>
+              </div>
+              <p class="note">
+                Password-manager extensions can be managed in Extensions.
+              </p>
+            </div>
+          </section>
+
+          <!-- Downloads: both controls affect WebKit's native destination selection. -->
+          <section
+            class="panel"
+            id="downloads"
+            data-panel-content
+            aria-labelledby="downloads-title"
+            hidden
+          >
+            <header class="page-heading">
+              <h1 id="downloads-title">Downloads</h1>
+              <p>Choose where downloaded files are saved.</p>
+            </header>
+            <div class="group">
+              <h2>Saving files</h2>
+              <div class="setting-row" data-search-row>
+                <div class="setting-copy">
+                  <span class="setting-title">Download folder</span>
+                  <p>{{downloadFolder}}</p>
+                </div>
+                <div class="controls">
+                  <a
+                    class="button"
+                    href="aero://settings/action/show-downloads"
+                  >
+                    Show
+                  </a>
+                  <a
+                    class="button"
+                    href="aero://settings/action/choose-downloads"
+                  >
+                    Choose…
+                  </a>
+                </div>
+              </div>
+              <div class="setting-row" data-search-row>
+                <div class="setting-copy">
+                  <label for="ask-downloads">Ask where to save each file</label>
+                  <p>Choose a destination before each download begins.</p>
+                </div>
+                <input
+                  id="ask-downloads"
+                  type="checkbox"
+                  switch
+                  data-setting="ask-downloads"
+                  {{askDownloadsChecked}}
+                />
+              </div>
+              <p class="note">
+                Downloads never open automatically. Current downloads appear in
+                the browser strip.
+              </p>
+            </div>
+          </section>
+
+          <!-- About reports actual build and update capabilities. -->
+          <section
+            class="panel"
+            id="about"
+            data-panel-content
+            aria-labelledby="about-title"
+            hidden
+          >
+            <header class="page-heading">
+              <h1 id="about-title">About {{appName}}</h1>
+              <p>A native browser for macOS.</p>
+            </header>
+            <div class="group">
+              <h2>Version and updates</h2>
+              <div class="setting-row" data-search-row>
+                <div class="setting-copy">
+                  <span class="setting-title">{{appName}}</span>
+                  <p>{{version}}</p>
+                </div>
+              </div>
+              <div class="setting-row" data-search-row>
+                <div class="setting-copy">
+                  <span class="setting-title">System WebKit</span>
+                  <p>
+                    The browser engine receives security fixes through macOS
+                    updates.
+                  </p>
+                </div>
+              </div>
+              <div class="setting-row" data-search-row>
+                <div class="setting-copy">
+                  <span class="setting-title">App updates</span>
+                  <p>{{updateStatus}}</p>
+                </div>
+                {{updateAction}}
+              </div>
+            </div>
+            <div class="group">
+              <h2>Acknowledgments</h2>
+              <div class="setting-row" data-search-row>
+                <div class="setting-copy">
+                  <span class="setting-title">Sparkle</span>
+                  <p>
+                    Signed application updates use the Sparkle framework. Its
+                    license and third-party notices are included in the
+                    application bundle.
+                  </p>
+                </div>
+              </div>
+              <div class="setting-row" data-search-row>
+                <div class="setting-copy">
+                  <span class="setting-title">Tracker protection</span>
+                  <p>
+                    Tracker domains supplied by Peter Lowe's list at
+                    pgl.yoyo.org. Revisions ship with app builds.
+                  </p>
+                </div>
+              </div>
+            </div>
+          </section>
+          <p class="empty" id="empty-search" role="status" hidden>
+            No settings match your search.
+          </p>
+        </div>
       </main>
     </div>
-  </div>
-  <script>
-    const panels = [...document.querySelectorAll('.panel')];
-    const links = [...document.querySelectorAll('nav a[data-panel]')];
-    const search = document.querySelector('#settings-search');
-    const empty = document.querySelector('.no-results');
-    function showPanel() {
-      if (search.value.trim()) return;
-      const requested = location.hash.slice(1);
-      const id = panels.some(panel => panel.id === requested) ? requested : 'general';
-      panels.forEach(panel => panel.classList.toggle('active', panel.id === id));
-      links.forEach(link => link.classList.toggle('active', link.dataset.panel === id));
-    }
-    function filterSettings() {
-      const query = search.value.trim().toLowerCase();
-      document.body.classList.toggle('searching', query.length > 0);
-      if (!query) {
-        panels.forEach(panel => panel.classList.remove('has-match'));
-        document.querySelectorAll('.group, .row').forEach(item => item.classList.remove('has-match', 'match'));
-        empty.style.display = 'none'; showPanel(); return;
-      }
-      let matches = 0;
-      panels.forEach(panel => {
-        let panelMatches = 0;
-        panel.querySelectorAll('.group').forEach(group => {
-          let groupMatches = 0;
-          group.querySelectorAll('.row').forEach(row => {
-            const match = `${row.dataset.search || ''} ${row.textContent}`.toLowerCase().includes(query);
-            row.classList.toggle('match', match);
-            if (match) { groupMatches++; matches++; }
-          });
-          group.classList.toggle('has-match', groupMatches > 0); panelMatches += groupMatches;
-        });
-        panel.classList.toggle('has-match', panelMatches > 0);
-      });
-      links.forEach(link => link.classList.remove('active'));
-      empty.style.display = matches ? 'none' : 'block';
-    }
-    addEventListener('hashchange', showPanel);
-    search.addEventListener('input', filterSettings);
-    showPanel();
-  </script>
-</body>
+    <script>
+      {{script}}
+    </script>
+  </body>
 </html>

@@ -26,12 +26,12 @@ enum AddressInput {
     }
 
     static func searchURL(for query: String) -> URL {
-        Settings.searchEngine.url(for: query)
+        CustomSearch.search(query)
     }
 
     /// True for the result pages `searchURL` produces, so they can be kept out of history.
     static func isSearchURL(_ url: URL) -> Bool {
-        SearchEngine.allCases.contains { $0.owns(url) }
+        SearchEngine.allCases.contains { $0.owns(url) } || CustomSearch.owns(url)
     }
 
     /// The short form shown in suggestions and the address field: no scheme, no "www.", no trailing slash.

@@ -66,14 +66,14 @@ falls back to a plain `.icns` of the Default look. `./x app` covers the `actool`
 
 - `./x dev` builds unoptimized in seconds, under its own bundle identifier so it cannot touch the
   data you browse with, and opens in the background. The Web Inspector is on, which a release
-  build compiles out.
+  build compiles out. It is sandboxed and signed ad hoc, with application updates disabled.
 - It is marked `LSUIElement`, so it stays out of the Dock. macOS drops the menu bar with that and
   offers no way to keep one without the other; the shortcuts still work, but menus, the Dock icon,
   ⌘-Tab and full screen need `./x run`.
 - `AERO_LOG=tint,sleep ./x dev` turns on a commentary from the parts that decide something
   invisible; `./x log` follows it. The channels are in `Sources/App/Log.swift`.
 - `./x shot` lives in `Tests/Window/Shot.swift` rather than the app, so the shipping browser
-  cannot be asked to render a page to a file.
+  cannot be asked to render a page to a file. It uses a private window without saved pins.
 
 ## Where things live
 
@@ -88,8 +88,8 @@ Sources/                        the app, one folder per feature
   Omnibox/                      the address field, address parsing, history
   Page/                         a tab and its page: top-edge color, hovered link, site icons,
                                 reload hold; its README maps the two Swift-and-JavaScript pipelines
-  Settings/                     preferences and the settings page
-  Downloads/                    WebKit downloads, destinations and current-session state
+  Settings/                     preferences, settings markup and shared browser-page CSS/JS
+  Downloads/                    WebKit transfers, staging, resume data and persistent download records
   Extensions/                   catalog, installed WebExtensions, permissions, actions and popups
 Tests/                          focused unit tests, grouped like the source tree; also the
                                 offscreen page harness, the tint survey and ./x shot
@@ -140,7 +140,9 @@ better way to meet one of them is welcome; change the code and its comments, not
 - Motion marks things that appear, leave or move, is brief and can be interrupted. Typed text is
   never animated, and neither is the address field: it and its suggestions appear and change at
   once. A reload should look as if nothing moved.
-- Aero has no Swift package dependencies, and `Scripts/guard.py` enforces it.
+- Sparkle is the sole approved Swift package dependency, pinned to an exact version and revision
+  for authenticated application updates. `Scripts/guard.py` enforces this exception; additional
+  dependencies require a maintainer decision.
 - The product name lives in `x` and the bundle. Do not hardcode it in sources.
 
 ## Naming and documentation
@@ -199,7 +201,7 @@ keeps past decisions.
 are pinned to full commit SHAs and workflows use minimal permissions. Never execute
 contributor code with a privileged PR token.
 
-`Scripts/guard.py` checks action pins and that `Package.swift` declares no dependencies.
+`Scripts/guard.py` checks action pins and the approved Sparkle dependency and lockfile revision.
 A legitimate boundary change updates the guard with an explanation; do not bypass it.
 The website deploys separately from app releases.
 See CONTRIBUTING.md before preparing a release.

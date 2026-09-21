@@ -12,6 +12,7 @@ APP=build/$NAME.app
 # settings are never the ones you browse with. Nothing it does can touch the real app's data.
 DEV_NAME=${NAME}Dev
 DEV_APP=build/$DEV_NAME.app
+DEV_BUNDLE_ID=$BUNDLE_ID.dev
 SOURCES="Sources Tests Package.swift"
 MIN_MACOS=15.4
 
@@ -22,14 +23,25 @@ swift_with_selected_sdk() {
   swift "$@" -Xlinker -platform_version -Xlinker macos -Xlinker "$MIN_MACOS" -Xlinker "$sdk_version"
 }
 
-# Lays out an app bundle: $1 build directory, $2 bundle path, $3 product name, $4 bundle identifier.
-# The icon and the signature are the caller's business; the debug bundle needs neither.
+# Lays out a bundle with Sparkle: $1 build directory, $2 bundle path, $3 product name,
+# $4 bundle identifier, $5 update public key. Callers add icons and sign the finished bundle.
 assemble() {
   rm -rf "$2"
   mkdir -p "$2/Contents/MacOS" "$2/Contents/Resources"
   cp "$1/Browser" "$2/Contents/MacOS/$3"
   cp -R "$1/Browser_Browser.bundle" "$2/Contents/Resources/"
-  sed -e "s/__NAME__/$3/g" -e "s/__BUNDLE_ID__/$4/g" Info.plist > "$2/Contents/Info.plist"
+  cp container-migration.plist "$2/Contents/Resources/"
+  sed -e "s/__NAME__/$3/g" -e "s/__BUNDLE_ID__/$4/g" -e "s|__UPDATE_PUBLIC_KEY__|$5|g" Info.plist > "$2/Contents/Info.plist"
+  python3 Scripts/sparkle.py "$2" -
+}
+
+# Signs a local bundle: $1 bundle path, $2 sandbox identity, $3 entitlement output directory.
+# Ad hoc signatures have no team to share with Sparkle, so local builds allow its library.
+sign_local() {
+  sed "s/__BUNDLE_ID__/$2/g" Sandbox.entitlements > "$3/sandbox.entitlements"
+  python3 -c 'import plistlib, sys; from pathlib import Path; root = Path(sys.argv[1]); value = plistlib.loads((root / "sandbox.entitlements").read_bytes()); value["com.apple.security.cs.disable-library-validation"] = True; (root / "development.entitlements").write_bytes(plistlib.dumps(value))' "$3"
+  codesign --force --options runtime --entitlements "$3/development.entitlements" --sign - "$1"
+  codesign --verify --deep --strict "$1"
 }
 
 command=${1:-check}
@@ -75,7 +87,7 @@ case "$command" in
     ;;
   log)
     # Follows what a dev build started with AERO_LOG has to say; see Sources/App/Log.swift.
-    file="$HOME/Library/Application Support/$BUNDLE_ID.dev/log.txt"
+    file="$HOME/Library/Containers/$DEV_BUNDLE_ID/Data/Library/Application Support/$DEV_BUNDLE_ID/log.txt"
     test -f "$file" || { echo "no log yet: run AERO_LOG=tint,reload,sleep ./x dev" >&2; exit 1; }
     tail -f "$file"
     ;;
@@ -91,17 +103,21 @@ case "$command" in
     ;;
   app)
     swift_with_selected_sdk build -c release
-    assemble .build/release "$APP" "$NAME" "$BUNDLE_ID"
+    assemble .build/release "$APP" "$NAME" "$BUNDLE_ID" "${AERO_UPDATE_PUBLIC_KEY:-}"
     Scripts/icon.sh Assets/app.icon "$APP/Contents/Resources"
-    codesign --force --sign - "$APP"
+    sign_local "$APP" "$BUNDLE_ID" build
     ;;
   signed-app)
     : "${AERO_SIGNING_IDENTITY:?set AERO_SIGNING_IDENTITY to the certificate name from security find-identity}"
     : "${AERO_PROVISIONING_PROFILE:?set AERO_PROVISIONING_PROFILE to the downloaded provisioning profile}"
+    : "${AERO_UPDATE_PUBLIC_KEY:?set AERO_UPDATE_PUBLIC_KEY to the public key from Sparkle generate_keys}"
+    python3 -c 'import base64, os; value = base64.b64decode(os.environ["AERO_UPDATE_PUBLIC_KEY"], validate=True); assert len(value) == 32, "The update public key must contain 32 bytes"'
     test -f "$AERO_PROVISIONING_PROFILE"
     ./x app
     cp "$AERO_PROVISIONING_PROFILE" "$APP/Contents/embedded.provisionprofile"
-    codesign --force --options runtime --timestamp --entitlements Aero.entitlements \
+    python3 -c 'import plistlib; from pathlib import Path; values = {}; [values.update(plistlib.loads(Path(p).read_bytes())) for p in ["build/sandbox.entitlements", "Aero.entitlements"]]; Path("build/signing.entitlements").write_bytes(plistlib.dumps(values))'
+    python3 Scripts/sparkle.py "$APP" "$AERO_SIGNING_IDENTITY"
+    codesign --force --options runtime --timestamp --entitlements build/signing.entitlements \
       --sign "$AERO_SIGNING_IDENTITY" "$APP"
     codesign --verify --deep --strict "$APP"
     ;;
@@ -110,10 +126,13 @@ case "$command" in
     # own data, so it cannot touch your browsing; the Web Inspector, which a release build compiles
     # out; and the background, so it never takes the screen from you. usage: ./x dev [url]
     swift_with_selected_sdk build
-    assemble .build/debug "$DEV_APP" "$DEV_NAME" "$BUNDLE_ID.dev"
+    # No publisher key: the isolated debug app must never install a production update.
+    assemble .build/debug "$DEV_APP" "$DEV_NAME" "$DEV_BUNDLE_ID" ""
     # Out of the Dock and the app switcher: a build under test should not take a place among the apps
     # you actually use. macOS drops the menu bar with it; see AGENTS.md for what that costs.
     /usr/libexec/PlistBuddy -c "Add :LSUIElement bool true" "$DEV_APP/Contents/Info.plist" >/dev/null
+    mkdir -p build/dev
+    sign_local "$DEV_APP" "$DEV_BUNDLE_ID" build/dev
     # `open` reactivates a running copy rather than launching the new build, so the old one goes first.
     if pkill -f "$DEV_APP/Contents/MacOS/$DEV_NAME"; then sleep 0.5; fi
     # An app launched by `open` does not inherit this shell's environment; AERO_LOG is handed over.
@@ -125,6 +144,29 @@ case "$command" in
     fi
     echo "$DEV_APP is running in the background; AERO_LOG=tint,reload,sleep ./x dev then ./x log"
     ;;
+  notarize-app)
+    : "${AERO_NOTARY_PROFILE:?set AERO_NOTARY_PROFILE to a notarytool keychain profile}"
+    ./x signed-app
+    ditto -c -k --keepParent "$APP" "build/$NAME-notarization.zip"
+    xcrun notarytool submit "build/$NAME-notarization.zip" --keychain-profile "$AERO_NOTARY_PROFILE" --wait --output-format json > build/notarization.json
+    python3 -c 'import json; from pathlib import Path; result = json.loads(Path("build/notarization.json").read_text()); assert result.get("status") == "Accepted", "Notarization was not accepted; inspect build/notarization.json"'
+    xcrun stapler staple "$APP"
+    xcrun stapler validate "$APP"
+    # Distribution must include the stapled ticket, which the submission ZIP predates.
+    ditto -c -k --keepParent "$APP" "build/$NAME.zip"
+    ;;
+  update-feed)
+    : "${1:?pass a directory containing signed release archives}"
+    : "${AERO_UPDATE_DOWNLOAD_PREFIX:?set the HTTPS download URL prefix for the archives}"
+    test -d "$1"
+    .build/artifacts/sparkle/Sparkle/bin/generate_appcast --download-url-prefix "$AERO_UPDATE_DOWNLOAD_PREFIX" "$1"
+    ;;
+  protection-feed)
+    directory=${1:-build/protection}
+    mkdir -p "$directory"
+    cp Sources/Page/Trackers.txt "$directory/Trackers.txt"
+    .build/artifacts/sparkle/Sparkle/bin/sign_update -p "$directory/Trackers.txt" > "$directory/Trackers.txt.sig"
+    ;;
   run)
     # Builds Aero as it ships and starts it: optimized, in the Dock, on the menu bar, and browsing
     # the data you actually browse with. The command to try a change as a person would meet it.
@@ -135,11 +177,11 @@ case "$command" in
     if pgrep -f "/$NAME.app/Contents/MacOS/$NAME" >/dev/null 2>&1; then
       echo "note: $NAME is already running; quit it first or you will be looking at the old build" >&2
     fi
-    open "$APP"
+    open "$APP" --args "$@"
     ;;
   clean) rm -rf .build build Website/.astro Website/.wrangler Website/dist ;;
   *)
-    echo 'usage: ./x [dev|run|check|test|shot|log|survey|fmt|lint|quality|guard|hooks|website|app|signed-app|clean]' >&2
+    echo 'usage: ./x [dev|run|check|test|shot|log|survey|fmt|lint|quality|guard|hooks|website|app|signed-app|notarize-app|update-feed|protection-feed|clean]' >&2
     exit 2
     ;;
 esac

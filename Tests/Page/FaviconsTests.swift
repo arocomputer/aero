@@ -50,6 +50,18 @@ private func temporaryDirectory() -> URL {
     #expect(Favicons.candidates(declared: declared, page: page).map(\.path) == ["/favicon.ico"])
 }
 
+@Test func thirdPartyIconsCannotBypassWebKitProtection() {
+    let declared = [
+        DeclaredIcon(url: URL(string: "https://tracker.example/icon.png")!, size: 32, isTouchIcon: false),
+        DeclaredIcon(url: URL(string: "http://aero.example/icon.png")!, size: 32, isTouchIcon: false),
+        icon("own.png", size: 32),
+    ]
+    #expect(
+        Favicons.candidates(declared: declared, page: page).map(\.absoluteString) == [
+            "https://aero.example/own.png", "https://aero.example/favicon.ico",
+        ])
+}
+
 @Test func declaredSizesUseTheLargestWidthAndMarkTouchIcons() {
     let declared = Favicons.declared(from: [
         ["href": "https://aero.example/icon.ico", "sizes": "16x16 48X48", "rel": "shortcut icon"],
@@ -98,6 +110,20 @@ private func temporaryDirectory() -> URL {
     let favicons = Favicons(directory: directory) { _ in png() }
     _ = await favicons.load(declared: [], page: page)
     favicons.clear()
+    #expect(favicons.icon(for: page) == nil)
+    #expect(!FileManager.default.fileExists(atPath: directory.path))
+}
+
+@MainActor @Test func pendingIconCannotRepopulateClearedHistory() async {
+    let directory = temporaryDirectory()
+    defer { try? FileManager.default.removeItem(at: directory) }
+    weak var pending: Favicons?
+    let favicons = Favicons(directory: directory) { _ in
+        pending?.clear()
+        return png()
+    }
+    pending = favicons
+    #expect(await favicons.load(declared: [], page: page) == nil)
     #expect(favicons.icon(for: page) == nil)
     #expect(!FileManager.default.fileExists(atPath: directory.path))
 }

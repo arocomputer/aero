@@ -1,0 +1,51 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <meta
+      http-equiv="Content-Security-Policy"
+      content="default-src 'none'; style-src 'unsafe-inline'; script-src 'unsafe-inline'; base-uri 'none'; form-action 'none'"
+    />
+    <title>{{title}}</title>
+    <style>
+      {{styles}}
+    </style>
+  </head>
+  <body>
+    <div class="shell">
+      <!-- Library pages keep history and explicitly saved bookmarks separate. -->
+      <aside class="sidebar">
+        <div class="sidebar-title">Library</div>
+        <nav>
+          <a href="aero://history">History</a>
+          <a href="aero://bookmarks">Bookmarks</a>
+          <a href="aero://downloads">Downloads</a>
+        </nav>
+        <a class="bottom-link" href="aero://settings">Settings</a>
+      </aside>
+      <main class="workspace">
+        <div class="content">
+          <input
+            id="library-search"
+            class="search"
+            type="search"
+            value="{{query}}"
+            placeholder="Search and press Return"
+            aria-label="Search library"
+          />
+          <header class="page-heading">
+            <h1>{{title}}</h1>
+            <p>{{description}}</p>
+            <div class="page-actions">{{actions}}</div>
+          </header>
+          <!-- Rows contain escaped local data and native actions validated against this page's origin. -->
+          {{rows}}
+        </div>
+      </main>
+    </div>
+    <script>
+      {{script}}
+    </script>
+  </body>
+</html>
