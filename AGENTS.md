@@ -36,20 +36,14 @@ newer and `npm ci` from `Website/`. CI runs the same checks.
 
 `./x quality` runs `./x lint` and `./x guard`. `./x lint` checks formatting with
 `swift format` in strict mode and builds with warnings as errors. `./x fmt` formats in
-place. `./x test` runs the unit tests. `./x run` builds the release bundle — `Info.plist`
-filled, the icon compiled, signed ad hoc — and starts it; `./x app` is that same build without
-the launch, which is what CI and a release call.
-`./x check` runs quality, the tests and `./x app`, so that a bundle which stopped assembling is
-caught before CI catches it; it adds `./x website check` only where `Website/node_modules`
-exists, which is how CI splits them.
+place. `./x test` runs the unit tests. `./x run` builds the release bundle and starts it;
+`./x app` is that build without the launch, which is what CI and a release call. `./x check`
+runs quality, the tests and `./x app`, and the website checks where its packages are installed.
 
-The workflows run on `macos-latest`, which rolls forward on GitHub's schedule and brings a new
-Xcode with it. `./x lint` gates on `swift format --strict`, whose version arrives that way, so a
-roll can reformat nothing and fail everything on a commit nobody wrote; the same roll is what
-keeps the toolchain current, which is why it is worth having. The weekly run on both workflows
-exists to meet that on a Monday rather than inside someone's pull request. A local `swift format`
-from a newer Xcode than the runner's can also disagree with CI: when `./x lint` passes here and
-fails there, that is the first thing to check.
+The workflows run on `macos-latest`, so a new Xcode arrives on GitHub's schedule and brings a
+new `swift format` with it. Both have a weekly run to meet that on a Monday rather than inside
+a pull request. When `./x lint` passes here and fails there, a newer local Xcode is the first
+thing to check.
 
 Required checks are `Validate` from Quality and `Build and Test` from App. `Website
 Check` runs when `Website/`, its workflow, or `x` changes. Keep those names aligned
@@ -63,46 +57,20 @@ The `actool` path is covered by `./x app` on a Mac with Xcode installed.
 
 ## The development loop
 
-These are the tools, not a procedure. `./x dev`, the log channels and `./x shot` exist because
-each removes a real cost from working here; reach for whichever earns its keep for the change
-in front of you, and ignore the rest. Nothing below is a step anyone owes a reviewer.
+`./x dev` is the one to develop in. It builds unoptimized in seconds, into its own bundle
+identifier so it cannot touch the data you browse with, and opens in the background. The Web
+Inspector is on, which a release build compiles out.
 
-`./x dev` is the one worth defaulting to. It builds unoptimized: about 3 seconds against the 14
-`./x app` takes on a warm build of this repository, which also compiles the icon and signs the
-bundle. It lays out `build/AeroDev.app`, a separate product with its own bundle identifier, so
-its history, site icons, pins and settings are never the ones you browse with and nothing it
-does can reach them. It opens in the background rather than taking the screen from what you are
-doing, and it replaces a copy already running, which plain `open` would merely bring forward.
-The Web Inspector is compiled out of a release build and is on here, so Safari's Develop menu
-reaches the page and the extension runtime.
-
-The debug bundle is marked `LSUIElement`, so it takes no place in the Dock or the app switcher
-among the apps you actually use. macOS offers no way to drop one and keep the other, so its menu
-bar goes too. `AppDelegate` reads that key rather than a flag of its own, and the shipping
-`Info.plist` never carries it.
-
-Everything a page does is unaffected: scrolling, clicking, typing, zooming, back and forward,
-downloads, extensions, the Web Inspector. So are the menu's shortcuts, which are dispatched
-through `NSApp.mainMenu` whether or not a menu bar is drawn; ⌘T, ⌘L, ⌘F and ⌘W were each
-confirmed claimed under this policy. Four things it cannot show you, each of which `./x run`
-can, so that is where to look when the change is about one of them:
-
-- the menu bar itself, and so a menu item's title, order or enabled state
-- the Dock icon and its menu, and the click on it that `applicationShouldHandleReopen` answers
-  with a new window
-- a place in ⌘-Tab; the window is reached by clicking it or through Mission Control
-- full screen, where a menu-bar-less app behaves differently enough not to be trusted here
+It is marked `LSUIElement`, so it stays out of the Dock. The menu bar goes with it, macOS
+offering no way to drop one and keep the other; the shortcuts still work, but menus, the Dock
+icon, ⌘-Tab and full screen are `./x run` territory.
 
 `AERO_LOG=tint,sleep ./x dev` turns on a commentary from the parts that decide something
-invisible, and `./x log` follows it. See `Sources/App/Log.swift` for the channels, and for why
-none of them may name a page.
+invisible, followed with `./x log`. The channels are in `Sources/App/Log.swift`.
 
-`./x shot <url> <file.png>` writes a picture of a real browser window without putting one on
-screen: the strip, the page, and whether the one took its color from the other. It is the
-cheapest way to see a visual change and the easiest picture to attach to a PR, though a
-screenshot taken by hand says the same thing and a recording says more about motion. It lives
-in `Tests/Window/Shot.swift`, not in the app, so the shipping browser has no mode that renders
-a page to a file on someone else's say-so.
+`./x shot <url> <file.png>` pictures a real window without putting one on screen. It lives in
+`Tests/Window/Shot.swift` rather than the app, so the shipping browser cannot be asked to render
+a page to a file.
 
 ## Where things live
 
@@ -138,19 +106,15 @@ python3 -m unittest discover -s Scripts/hooks -p 'test_*.py'
 
 Tests should pin observable behavior. A regression test must fail against the unfixed
 code for the intended reason; check that once by breaking the code on purpose. Tests
-cover the types that hold rules. Views have no tests, so a visual change is shown rather than
-asserted; `./x shot` is the quickest way to get that picture, and naming the address it was
-taken at makes it reproducible.
+cover the types that hold rules. Views have no tests; show a visual change instead, with
+`./x shot` and the address it was taken at.
 
-The tests that need a page run it in a window that is never shown; `ScriptedPage` in
-`Tests/Page/ScriptedPage.swift` is the one harness for that, and a new script test should
-use it rather than grow another. `./x survey` measures the tint script against real sites
-over the network; it takes minutes, is not part of `./x check`, and only fails when a page
-painted and the script said nothing at all about it.
+Tests that need a page use `ScriptedPage`, which runs it in a window that is never shown; a new
+script test should use it rather than grow another harness. `./x survey` measures the tint script
+against real sites, which takes minutes and the network, so it is not part of `./x check`.
 
 Do not send synthetic keyboard or pointer input to a desktop someone is using, and do
-not raise test windows over their work without asking. Nothing here needs to: the tests
-and `./x shot` never order a window in, and `./x dev` opens behind what is already there.
+not raise test windows over their work without asking. Nothing here needs to.
 
 ## What Aero is
 
