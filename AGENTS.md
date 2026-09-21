@@ -86,14 +86,15 @@ Sources/                        the app, one folder per feature
   Window/                       the browser window and its controller, the browser menu, find, the link bubble
   Strip/                        the tab strip and its items
   Omnibox/                      the address field, address parsing, history
-  Page/                         a tab and its page: top-edge color, hovered link, site icons, reload hold
+  Page/                         a tab and its page: top-edge color, hovered link, site icons,
+                                reload hold; its README maps the two Swift-and-JavaScript pipelines
   Settings/                     preferences and the settings page
   Downloads/                    WebKit downloads, destinations and current-session state
   Extensions/                   catalog, installed WebExtensions, permissions, actions and popups
 Tests/                          focused unit tests, grouped like the source tree; also the
                                 offscreen page harness, the tint survey and ./x shot
 Assets/                         the app icon's Icon Composer source, logo and wordmark
-Website/                       aerobrowser.app source, checks, and deployment
+Website/                        aerobrowser.app: its own toolchain and deploy, and a README
 Scripts/                        guard, commit hooks and their tests, icon packaging
 ```
 
@@ -159,7 +160,14 @@ enum PageTintProvider {}
 Keep conventional Swift naming and the standard SwiftPM layout under `Sources/` and `Tests/`.
 
 The README introduces the app, its keys and its layout. Repository policy stays in root
-markdown files. Do not create a docs folder or duplicate guides.
+markdown files. Do not create a docs folder.
+
+A folder earns a README when several files work together and no single file owns that story.
+`Sources/Page/README.md` maps the tint and reload pipelines across Swift and JavaScript;
+`Website/README.md` covers a project with its own toolchain and deploy. Neither restates a doc
+comment or this file, and where they disagree the comment beside the code is right. Every other
+folder is small enough that its files speak for themselves; leave them alone. A README under
+`Sources/` must also be listed in `Package.swift`'s `exclude`, or the build fails on it.
 
 This file states intent and how to work here. Mechanisms, numbers and the reasons behind them
 live in doc comments beside the code they describe, where a change to one changes the other.

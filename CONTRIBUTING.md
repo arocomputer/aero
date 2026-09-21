@@ -120,8 +120,10 @@ rather than passing that responsibility to reviewers.
 
 ## Documentation
 
-The README introduces the app. Root markdown files describe repository policy. Keep one
-authoritative account of each rule; use Git history for past decisions.
+The README introduces the app. Root markdown files describe repository policy. A folder gets a
+README of its own only when several files work together and no single file owns that story;
+`Sources/Page/` and `Website/` have one, and nothing else needs one. Keep one authoritative
+account of each rule; use Git history for past decisions.
 
 ## Releases
 
