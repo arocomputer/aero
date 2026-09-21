@@ -81,6 +81,7 @@ final class PageTint {
     /// wait, which changes what the tab shows, so it is announced like a change of color.
     func report(_ full: String) {
         let (wasWaiting, before) = (kept != nil, color)
+        Log.write(.tint, "report \(full)\(wasWaiting ? " (was holding)" : "")")
         defer { if wasWaiting, color == before { onChange() } }
         kept?.cancel()
         kept = nil
@@ -155,6 +156,7 @@ final class PageTint {
         guard let element = undecided, isShown() else { return }
         if isLoading() { return schedule() }
         snapshotted.insert(element)
+        Log.write(.tint, "snapshot \(snapshotted.count) of \(Self.maxSnapshots) for \(element)")
         snapshot { [weak self] color in
             guard let self, let color else { return }
             found[element] = color

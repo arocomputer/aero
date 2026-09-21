@@ -3,6 +3,10 @@ on:
   push:
     branches: [main]
   pull_request:
+  # The runner image rolls forward and its Xcode with it, which can break a repository nobody
+  # changed. A weekly run finds that on a Monday rather than inside someone's pull request.
+  schedule:
+    - cron: "0 9 * * 1"
   workflow_dispatch:
 permissions:
   contents: read

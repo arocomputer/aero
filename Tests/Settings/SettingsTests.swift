@@ -10,9 +10,9 @@ func searchEnginesEncodeQueries(_ engine: SearchEngine) throws {
     #expect(engine.owns(url))
 }
 
-@Test func searchResultRecognitionCoversEveryEngine() {
-    for engine in SearchEngine.allCases {
-        #expect(AddressInput.isSearchURL(engine.url(for: "aero")))
-    }
+/// Every engine recognizing its own result pages is pinned above, which is what keeps searches out of
+/// history. The other half of that rule is that an ordinary page which happens to look like a search
+/// is still recorded.
+@Test func aPageThatMerelyLooksLikeASearchIsStillHistory() {
     #expect(!AddressInput.isSearchURL(URL(string: "https://example.com/search?q=aero")!))
 }

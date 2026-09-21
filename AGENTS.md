@@ -25,8 +25,9 @@ tab and on Command-L. The repository is `arocomputer/aero`. The Swift module is
 
 ```sh
 ./x hooks      # once per contributing checkout or worktree
-./x check      # check the native app and website
-./x run        # build build/Aero.app and open it
+./x dev        # the debug build: fast, its own data, in the background and out of the Dock
+./x run        # build and start Aero as it ships
+./x check      # check the native app, and the website when its packages are installed
 ```
 
 Aero needs macOS 15.4 or newer and a Swift 6 toolchain. The Command Line Tools are enough;
@@ -35,9 +36,20 @@ newer and `npm ci` from `Website/`. CI runs the same checks.
 
 `./x quality` runs `./x lint` and `./x guard`. `./x lint` checks formatting with
 `swift format` in strict mode and builds with warnings as errors. `./x fmt` formats in
-place. `./x test` runs the unit tests. `./x app` builds the release bundle, fills
-`Info.plist`, adds the icon and signs it ad hoc. `./x website check` checks and builds
-the static site.
+place. `./x test` runs the unit tests. `./x run` builds the release bundle — `Info.plist`
+filled, the icon compiled, signed ad hoc — and starts it; `./x app` is that same build without
+the launch, which is what CI and a release call.
+`./x check` runs quality, the tests and `./x app`, so that a bundle which stopped assembling is
+caught before CI catches it; it adds `./x website check` only where `Website/node_modules`
+exists, which is how CI splits them.
+
+The workflows run on `macos-latest`, which rolls forward on GitHub's schedule and brings a new
+Xcode with it. `./x lint` gates on `swift format --strict`, whose version arrives that way, so a
+roll can reformat nothing and fail everything on a commit nobody wrote; the same roll is what
+keeps the toolchain current, which is why it is worth having. The weekly run on both workflows
+exists to meet that on a Monday rather than inside someone's pull request. A local `swift format`
+from a newer Xcode than the runner's can also disagree with CI: when `./x lint` passes here and
+fails there, that is the first thing to check.
 
 Required checks are `Validate` from Quality and `Build and Test` from App. `Website
 Check` runs when `Website/`, its workflow, or `x` changes. Keep those names aligned
@@ -49,6 +61,49 @@ compiles it with `actool` into `Assets.car`, and macOS renders the Default, Dark
 Without Xcode it renders a plain `.icns` of the Default look with Icon Composer's `ictool`.
 The `actool` path is covered by `./x app` on a Mac with Xcode installed.
 
+## The development loop
+
+These are the tools, not a procedure. `./x dev`, the log channels and `./x shot` exist because
+each removes a real cost from working here; reach for whichever earns its keep for the change
+in front of you, and ignore the rest. Nothing below is a step anyone owes a reviewer.
+
+`./x dev` is the one worth defaulting to. It builds unoptimized: about 3 seconds against the 14
+`./x app` takes on a warm build of this repository, which also compiles the icon and signs the
+bundle. It lays out `build/AeroDev.app`, a separate product with its own bundle identifier, so
+its history, site icons, pins and settings are never the ones you browse with and nothing it
+does can reach them. It opens in the background rather than taking the screen from what you are
+doing, and it replaces a copy already running, which plain `open` would merely bring forward.
+The Web Inspector is compiled out of a release build and is on here, so Safari's Develop menu
+reaches the page and the extension runtime.
+
+The debug bundle is marked `LSUIElement`, so it takes no place in the Dock or the app switcher
+among the apps you actually use. macOS offers no way to drop one and keep the other, so its menu
+bar goes too. `AppDelegate` reads that key rather than a flag of its own, and the shipping
+`Info.plist` never carries it.
+
+Everything a page does is unaffected: scrolling, clicking, typing, zooming, back and forward,
+downloads, extensions, the Web Inspector. So are the menu's shortcuts, which are dispatched
+through `NSApp.mainMenu` whether or not a menu bar is drawn; ⌘T, ⌘L, ⌘F and ⌘W were each
+confirmed claimed under this policy. Four things it cannot show you, each of which `./x run`
+can, so that is where to look when the change is about one of them:
+
+- the menu bar itself, and so a menu item's title, order or enabled state
+- the Dock icon and its menu, and the click on it that `applicationShouldHandleReopen` answers
+  with a new window
+- a place in ⌘-Tab; the window is reached by clicking it or through Mission Control
+- full screen, where a menu-bar-less app behaves differently enough not to be trusted here
+
+`AERO_LOG=tint,sleep ./x dev` turns on a commentary from the parts that decide something
+invisible, and `./x log` follows it. See `Sources/App/Log.swift` for the channels, and for why
+none of them may name a page.
+
+`./x shot <url> <file.png>` writes a picture of a real browser window without putting one on
+screen: the strip, the page, and whether the one took its color from the other. It is the
+cheapest way to see a visual change and the easiest picture to attach to a PR, though a
+screenshot taken by hand says the same thing and a recording says more about motion. It lives
+in `Tests/Window/Shot.swift`, not in the app, so the shipping browser has no mode that renders
+a page to a file on someone else's say-so.
+
 ## Where things live
 
 ```text
@@ -56,7 +111,7 @@ Package.swift                   one executable target, Browser, and its tests
 Info.plist                      bundle template; ./x app fills __NAME__ and __BUNDLE_ID__
 x                               contributor and CI commands; also holds the product name
 Sources/                        the app, one folder per feature
-  App/                          entry point, main menu, app paths, passkeys
+  App/                          entry point, main menu, app paths, passkeys, the log channels
   Window/                       the browser window and its controller, the browser menu, find, the link bubble
   Strip/                        the tab strip and its items
   Omnibox/                      the address field, address parsing, history
@@ -64,7 +119,8 @@ Sources/                        the app, one folder per feature
   Settings/                     preferences and the settings page
   Downloads/                    WebKit downloads, destinations and current-session state
   Extensions/                   catalog, installed WebExtensions, permissions, actions and popups
-Tests/                          focused unit tests, grouped like the source tree
+Tests/                          focused unit tests, grouped like the source tree; also the
+                                offscreen page harness, the tint survey and ./x shot
 Assets/                         the app icon's Icon Composer source, logo and wordmark
 Website/                       aerobrowser.app source, checks, and deployment
 Scripts/                        guard, commit hooks and their tests, icon packaging
@@ -74,18 +130,27 @@ Scripts/                        guard, commit hooks and their tests, icon packag
 
 ```sh
 ./x test --filter PageTint
-./x test --filter History
+./x test --filter TabSleep
 ./x test --filter AddressInput
+AERO_TEST_TIMEOUT=3 ./x test        # while a script test is failing, stop waiting 20s for it
 python3 -m unittest discover -s Scripts/hooks -p 'test_*.py'
 ```
 
 Tests should pin observable behavior. A regression test must fail against the unfixed
 code for the intended reason; check that once by breaking the code on purpose. Tests
-cover the types that hold rules. Views have no tests. Verify a visual change by running
-the app and capturing its window, and say so in the PR.
+cover the types that hold rules. Views have no tests, so a visual change is shown rather than
+asserted; `./x shot` is the quickest way to get that picture, and naming the address it was
+taken at makes it reproducible.
+
+The tests that need a page run it in a window that is never shown; `ScriptedPage` in
+`Tests/Page/ScriptedPage.swift` is the one harness for that, and a new script test should
+use it rather than grow another. `./x survey` measures the tint script against real sites
+over the network; it takes minutes, is not part of `./x check`, and only fails when a page
+painted and the script said nothing at all about it.
 
 Do not send synthetic keyboard or pointer input to a desktop someone is using, and do
-not raise test windows over their work without asking.
+not raise test windows over their work without asking. Nothing here needs to: the tests
+and `./x shot` never order a window in, and `./x dev` opens behind what is already there.
 
 ## What Aero is
 

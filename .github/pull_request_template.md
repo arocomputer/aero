@@ -22,7 +22,8 @@
 
 ### Screenshots or recordings
 
-<!-- Include these for visual changes; otherwise remove this section. -->
+<!-- Include these for visual changes; otherwise remove this section.
+     ./x shot <url> <file.png> takes one from a real window. Say which address it was taken at. -->
 
 ### Checklist
 
