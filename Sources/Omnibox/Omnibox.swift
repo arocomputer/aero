@@ -74,9 +74,10 @@ final class Omnibox: NSView, NSTextFieldDelegate {
         if !isOverPage { onBackgroundChange?() }
     }
 
-    /// Shows the field with `text` selected and takes keyboard focus. `overPage` makes the backdrop
-    /// transparent and dismissible; otherwise it is the opaque blank-tab page.
-    func present(text: String, overPage: Bool) {
+    /// Shows the field with `text` and takes keyboard focus. `overPage` makes the backdrop transparent
+    /// and dismissible; otherwise it is the opaque blank-tab page. `selectingText` highlights the
+    /// existing address so typing replaces it at once; without it the caret sits after the address.
+    func present(text: String, overPage: Bool, selectingText: Bool = true) {
         suggestionTask?.cancel()
         isOverPage = overPage
         needsDisplay = true
@@ -89,9 +90,10 @@ final class Omnibox: NSView, NSTextFieldDelegate {
         rebuildRows()
 
         window?.makeFirstResponder(field)
+        guard let editor = field.currentEditor() as? NSTextView else { return }
         // The inline completion is a selection; neutral gray keeps it from reading as an error or a link.
-        (field.currentEditor() as? NSTextView)?.selectedTextAttributes =
-            [.backgroundColor: NSColor.labelColor.withAlphaComponent(0.12)]
+        editor.selectedTextAttributes = [.backgroundColor: NSColor.labelColor.withAlphaComponent(0.12)]
+        if !selectingText { editor.setSelectedRange(NSRange(location: (field.stringValue as NSString).length, length: 0)) }
     }
 
     func dismiss() {

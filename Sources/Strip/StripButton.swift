@@ -1,23 +1,33 @@
 import AppKit
 
 /// A small round symbol button for the strip, used for closing a tab, the new-tab "+" and navigation
-/// controls. It is a bare glyph; the gray disc shows only while the pointer is over the button
-/// itself. Disabled, it dims and ignores the pointer.
+/// controls. The gray disc hugs the glyph and is centered on it; it shows only while the pointer is
+/// over the button itself. Disabled, the button dims and hands the press back to the title bar, so a
+/// greyed control drags the window.
 final class StripButton: NSView {
     var onClick: (() -> Void)?
     var isEnabled = true { didSet { if isEnabled != oldValue { needsDisplay = true } } }
 
+    private let disc = NSView()
     private let icon: NSImageView
+    /// Nudges the glyph in points, for symbols whose ink does not sit at the image's center.
+    private let offset: CGPoint
     private var isHovered = false { didSet { needsDisplay = true } }
 
-    init(symbol: String, pointSize: CGFloat, weight: NSFont.Weight = .semibold, rotation: CGFloat = 0) {
+    init(
+        symbol: String, pointSize: CGFloat, weight: NSFont.Weight = .semibold, rotation: CGFloat = 0, offset: CGPoint = .zero
+    ) {
         let image = NSImage(systemSymbolName: symbol, accessibilityDescription: symbol)!
             .withSymbolConfiguration(.init(pointSize: pointSize, weight: weight))!
         icon = NSImageView(image: image)
+        self.offset = offset
         super.init(frame: .zero)
         wantsLayer = true
         setAccessibilityRole(.button)
         icon.frameCenterRotation = rotation
+        disc.wantsLayer = true
+        disc.layer?.cornerCurve = .continuous
+        addSubview(disc)
         addSubview(icon)
         addTrackingArea(
             NSTrackingArea(
@@ -27,20 +37,28 @@ final class StripButton: NSView {
 
     required init?(coder: NSCoder) { fatalError("not used") }
 
-    override var mouseDownCanMoveWindow: Bool { false }
+    /// A control that is not doing anything is title background: a greyed control lets the title bar
+    /// drag, while an apparent one keeps the press. The menu button is never disabled, so it never drags.
+    override var mouseDownCanMoveWindow: Bool { !isEnabled }
     override var wantsUpdateLayer: Bool { true }
     override func acceptsFirstMouse(for event: NSEvent?) -> Bool { true }
     override func hitTest(_ point: NSPoint) -> NSView? { super.hitTest(point) == nil ? nil : self }
 
-    override func updateLayer() {
-        layer?.backgroundColor = NSColor.textColor.withAlphaComponent(isHovered && isEnabled ? 0.12 : 0).cgColor
-        icon.contentTintColor = NSColor.textColor.withAlphaComponent(isEnabled ? 0.6 : 0.2)
-    }
-
+    /// Sizes the disc to the glyph with even padding, and centers both, so the highlight can never read
+    /// as a loose or off-center pad behind the icon.
     override func layout() {
         super.layout()
-        layer?.cornerRadius = bounds.height / 2
-        icon.frame = bounds
+        let glyph = icon.image?.size ?? .zero
+        let diameter = min(bounds.width, bounds.height, max(glyph.width, glyph.height) + 7)
+        disc.frame = NSRect(
+            x: (bounds.width - diameter) / 2, y: (bounds.height - diameter) / 2, width: diameter, height: diameter)
+        disc.layer?.cornerRadius = diameter / 2
+        icon.frame = bounds.offsetBy(dx: offset.x, dy: offset.y)
+    }
+
+    override func updateLayer() {
+        disc.layer?.backgroundColor = NSColor.textColor.withAlphaComponent(isHovered && isEnabled ? 0.12 : 0).cgColor
+        icon.contentTintColor = NSColor.textColor.withAlphaComponent(isEnabled ? 0.6 : 0.2)
     }
 
     override func mouseEntered(with event: NSEvent) { isHovered = true }

@@ -37,13 +37,20 @@ final class Pill: NSView, TabItem {
     var onClose: (() -> Void)? { didSet { closeButton.onClick = onClose } }
     var onPin: (() -> Void)?
     var onSiteInformation: (() -> Void)?
+    var onCopyLink: (() -> Void)?
+    /// A press that moves far enough becomes a drag, and `onDrag` follows it to the release, given
+    /// where in the window the press began.
+    var onDrag: ((NSPoint) -> Void)?
     var representsGroup = false { didSet { if representsGroup != oldValue { needsLayout = true } } }
+    /// Where the pointer went down, to tell a click from a drag.
+    private var pressOrigin: NSPoint?
 
     private let fill = NSView()
     private let iconView = NSImageView()
     private let label = NSTextField(labelWithString: "")
-    private let closeButton = StripButton(symbol: "xmark", pointSize: 11)
-    private let infoButton = StripButton(symbol: "info.circle", pointSize: 13, weight: .regular)
+    private let closeButton = StripButton(symbol: "xmark", pointSize: 11, offset: CGPoint(x: 0, y: -0.5))
+    // Both glyphs sit half a point off the image's center at these sizes, measured against the disc.
+    private let infoButton = StripButton(symbol: "info.circle", pointSize: 13, weight: .regular, offset: CGPoint(x: -0.5, y: -0.5))
     private var isHovered = false {
         didSet {
             guard isHovered != oldValue else { return }
@@ -118,8 +125,9 @@ final class Pill: NSView, TabItem {
         let shown = showsInformation
         let x = titleInset + (shown && icon == nil ? 22 : 0)
         let titleFrame = NSRect(x: x, y: 7, width: max(0, bounds.width - x - 28), height: 16)
-        // Two points of padding around the existing glyph slot enlarge the hover disc and hit target.
-        let infoFrame = NSRect(x: icon == nil ? titleInset - 2 + (shown ? 0 : -4) : 8, y: 5, width: 20, height: 20)
+        // Centered on the favicon slot (center 18) whether or not the tab has one, so the disc lines
+        // up with a site icon rather than sitting a couple of points to its right.
+        let infoFrame = NSRect(x: 8, y: 5, width: 20, height: 20)
         let iconCovered = isHovered && closeButton.frame.minX < iconView.frame.maxX + 2
         infoButton.setAccessibilityHidden(!shown)
         NSAnimationContext.runAnimationGroup { context in
@@ -137,6 +145,7 @@ final class Pill: NSView, TabItem {
         let menu = NSMenu()
         if !representsGroup && AddressInput.isWeb(tab?.url) {
             menu.addItem(withTitle: "Site Information…", action: #selector(informationClicked), keyEquivalent: "").target = self
+            menu.addItem(withTitle: "Copy Link", action: #selector(copyLinkClicked), keyEquivalent: "").target = self
         }
         if canPin { menu.addItem(withTitle: "Pin Tab", action: #selector(pinClicked), keyEquivalent: "").target = self }
         menu.addItem(withTitle: representsGroup ? "Close Group" : "Close Tab", action: #selector(closeClicked), keyEquivalent: "").target =
@@ -146,11 +155,27 @@ final class Pill: NSView, TabItem {
 
     override func mouseEntered(with event: NSEvent) { isHovered = true }
     override func mouseExited(with event: NSEvent) { isHovered = false }
-    override func mouseDown(with event: NSEvent) { onSelect?() }
+    override func mouseDown(with event: NSEvent) {
+        pressOrigin = event.locationInWindow
+        onSelect?()
+    }
+
+    /// A collapsed group has no single tab to move, so it stays a click.
+    override func mouseDragged(with event: NSEvent) {
+        guard !representsGroup, let origin = pressOrigin,
+            abs(event.locationInWindow.x - origin.x) > 3 || abs(event.locationInWindow.y - origin.y) > 3
+        else { return }
+        pressOrigin = nil
+        onDrag?(origin)
+    }
+
+    override func mouseUp(with event: NSEvent) { pressOrigin = nil }
+
     override func otherMouseDown(with event: NSEvent) { onClose?() }
 
     @objc private func pinClicked() { onPin?() }
     @objc private func informationClicked() { onSiteInformation?() }
+    @objc private func copyLinkClicked() { onCopyLink?() }
     @objc private func closeClicked() { onClose?() }
 
     private func updateFill(animated: Bool) {
