@@ -139,8 +139,8 @@ better way to meet one of them is welcome; change the code and its comments, not
 - The window is the system's: a toolbar window with the system's corners, titlebar height and
   traffic lights, drawn larger but never replaced.
 - Motion marks things that appear, leave or move, is brief and can be interrupted. Typed text is
-  never animated, and neither is the address field: it and its suggestions appear and change at
-  once. A reload should look as if nothing moved.
+  never animated. The address field appears and leaves at once and stays put while open; only its
+  suggestions below it move as they follow typing. A reload should look as if nothing moved.
 - Sparkle is the sole approved Swift package dependency, pinned to an exact version and revision
   for authenticated application updates. `Scripts/guard.py` enforces this exception; additional
   dependencies require a maintainer decision.

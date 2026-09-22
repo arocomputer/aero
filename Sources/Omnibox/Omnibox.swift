@@ -5,9 +5,12 @@ import AppKit
 /// page's own address opens as the field alone. Typing completes inline from history; ↑/↓ pick a row,
 /// Tab accepts the completion, Return navigates, Esc or a click outside dismisses.
 ///
-/// Nothing here is animated: the field and its list appear, change and leave at once, so what is
-/// typed and what it matches are never a moment behind each other. Suggestions that survive a
-/// keystroke keep their row view, so they hold still while the list changes around them.
+/// The field appears and leaves at once; animating its arrival once flashed a gray card at launch.
+/// It holds still at the window's center while it is open, and the list below it follows typing with
+/// brief, interruptible motion: it unrolls from under the field and rolls back up, grows and
+/// shrinks, suggestions that survive a keystroke keep their row and slide to their new place, new ones
+/// rise into theirs, and dropped ones clear out first, so two lines of text never share a slot for
+/// long. The typed text itself never moves. Reduce Motion turns it all off.
 final class Omnibox: NSView, NSTextFieldDelegate {
     var onNavigate: ((URL) -> Void)?
     var onDismiss: (() -> Void)?
@@ -46,7 +49,7 @@ final class Omnibox: NSView, NSTextFieldDelegate {
         searchHint.textColor = .tertiaryLabelColor
         searchHint.isHidden = true
         [field, searchHint].forEach(fieldBox.addSubview)
-        listBox.isHidden = true
+        listBox.alphaValue = 0
         rowsClip.wantsLayer = true
         rowsClip.layer?.cornerRadius = 12
         rowsClip.layer?.cornerCurve = .continuous
@@ -90,7 +93,7 @@ final class Omnibox: NSView, NSTextFieldDelegate {
         entries = text.isEmpty || !suggesting ? [] : History.shared.suggestions(for: text)
         onTextChange?(typed)
         isHidden = false
-        rebuildRows()
+        rebuildRows(animated: false)
 
         window?.makeFirstResponder(field)
         guard let editor = field.currentEditor() as? NSTextView else { return }
@@ -109,22 +112,59 @@ final class Omnibox: NSView, NSTextFieldDelegate {
         arrange()
     }
 
-    /// Places the field at the window's center, nudged up while suggestions show, with the list below it.
-    private func arrange() {
+    /// Places the field at the window's center with the list below it; suggestions never move the field.
+    /// Animated, a list that is appearing unrolls from a sliver under the field, uncovering its rows from
+    /// the top while it fades in over the first half; one that is emptying rolls back up as it fades.
+    /// A plain fade was too faint to notice at the moment the eye is on the first letter typed.
+    private func arrange(animated: Bool = false) {
         let width = min(478, bounds.width - 40)
         let x = ((bounds.width - width) / 2).rounded()
         // Centered on the window rather than the content area, which starts below the tab strip.
         let windowCenter = superview.map { convert(NSPoint(x: 0, y: $0.bounds.midY), from: $0).y } ?? bounds.midY
-        let y = (windowCenter - 21 - (rows.isEmpty ? 0 : 16)).rounded()
+        let y = (windowCenter - 21).rounded()
         fieldBox.frame = NSRect(x: x, y: y, width: width, height: 42)
-        listBox.frame = NSRect(x: x, y: y + 50, width: width, height: CGFloat(rows.count) * 29 + 9)
-        listBox.isHidden = rows.isEmpty
-        rowsClip.frame = NSRect(origin: .zero, size: listBox.frame.size)
+        var listFrame = NSRect(x: x, y: y + 50, width: width, height: CGFloat(rows.count) * 29 + 9)
         field.frame = NSRect(x: 16, y: 12, width: width - 32, height: 18)
         placeSearchHint()
-        for (index, row) in rows.enumerated() {
-            row.frame = NSRect(x: 5.5, y: 4.5 + CGFloat(index) * 29, width: width - 11, height: 29)
+        let rowFrames = rows.indices.map { NSRect(x: 5.5, y: 4.5 + CGFloat($0) * 29, width: width - 11, height: 29) }
+
+        guard animated else {
+            listBox.frame = listFrame
+            listBox.alphaValue = rows.isEmpty ? 0 : 1
+            rowsClip.frame = NSRect(origin: .zero, size: listFrame.size)
+            zip(rows, rowFrames).forEach { $0.frame = $1 }
+            return
         }
+        let listWasShowing = listBox.alphaValue > 0
+        let sliver = NSRect(origin: listFrame.origin, size: NSSize(width: width, height: 9))
+        if rows.isEmpty {
+            listFrame = sliver
+        } else if !listWasShowing {
+            listBox.frame = sliver
+            rowsClip.frame = NSRect(origin: .zero, size: sliver.size)
+        }
+        for (row, frame) in zip(rows, rowFrames) where row.frame.isEmpty || !listWasShowing {
+            // A row joining a list that is already up rises the last few points into its place.
+            row.frame = listWasShowing ? frame.offsetBy(dx: 0, dy: 6) : frame
+        }
+        Self.animate(rows.isEmpty ? 0.2 : 0.14) { listBox.animator().alphaValue = rows.isEmpty ? 0 : 1 }
+        Self.animate(0.28) {
+            listBox.animator().frame = listFrame
+            rowsClip.animator().frame = NSRect(origin: .zero, size: listFrame.size)
+            for (row, frame) in zip(rows, rowFrames) where row.frame != frame { row.animator().frame = frame }
+        }
+    }
+
+    /// Runs `changes` with the address field's motion: brief and instant under Reduce Motion. The curve
+    /// is the plain ease-out: steeper ones measured as most of the travel landing in the first 60 ms,
+    /// which read as no motion at all.
+    fileprivate static func animate(_ duration: TimeInterval, _ changes: () -> Void, completion: (() -> Void)? = nil) {
+        NSAnimationContext.runAnimationGroup(
+            { context in
+                context.duration = NSWorkspace.shared.accessibilityDisplayShouldReduceMotion ? 0 : duration
+                context.timingFunction = CAMediaTimingFunction(name: .easeOut)
+                changes()
+            }, completionHandler: completion)
     }
 
     override func mouseDown(with event: NSEvent) {
@@ -207,7 +247,10 @@ final class Omnibox: NSView, NSTextFieldDelegate {
 
     /// Brings the rows in line with history. The field itself owns typed text and its inline completion,
     /// so rows only show distinct destinations. A destination that is still offered keeps its row view.
-    private func rebuildRows(select: Int? = nil) {
+    /// Animated, which is the default once the field is up, new rows fade in as they rise into place and
+    /// dropped ones fade out quickly, drifting up, so they are gone before a surviving row slides into
+    /// their slot.
+    private func rebuildRows(select: Int? = nil, animated: Bool = true) {
         // With favicons on, every row has an icon so the titles line up: the site's, or a plain globe.
         let showsIcons = Settings.showsFavicons
         let items = entries.map {
@@ -228,14 +271,33 @@ final class Omnibox: NSView, NSTextFieldDelegate {
             rowsClip.addSubview(row)
             return row
         }
-        rows.filter { row in !updated.contains { $0 === row } }.forEach { $0.removeFromSuperview() }
+        let entering = updated.filter { $0.frame.isEmpty }
+        let leaving = rows.filter { row in !updated.contains { $0 === row } }
         rows = updated
         for (index, row) in rows.enumerated() {
             row.onClick = { [weak self] in self?.activate(row: index) }
         }
         selected = select
         updateSearchHint()
-        arrange()
+
+        guard animated, !isHidden, window?.isVisible == true else {
+            leaving.forEach { $0.removeFromSuperview() }
+            arrange()
+            return
+        }
+        // Rows arriving with the list itself ride its fade rather than fading twice.
+        if listBox.alphaValue > 0 { entering.forEach { $0.alphaValue = 0 } }
+        arrange(animated: true)
+        leaving.forEach { $0.onClick = nil }
+        Self.animate(0.12) {
+            for row in leaving {
+                row.animator().alphaValue = 0
+                row.animator().frame = row.frame.offsetBy(dx: 0, dy: -4)
+            }
+        } completion: {
+            leaving.forEach { $0.removeFromSuperview() }
+        }
+        Self.animate(0.22) { entering.forEach { $0.animator().alphaValue = 1 } }
     }
 
     /// Shows the search provider after a query without adding a duplicate suggestion row.
@@ -292,8 +354,8 @@ private final class SuggestionRow: NSView {
     let key: String
     var onClick: (() -> Void)?
     /// Shown by contrast alone: the selected or hovered row's text is full strength, the rest recede.
-    var isSelected = false { didSet { if isSelected != oldValue { updateEmphasis() } } }
-    private var isHovered = false { didSet { if isHovered != oldValue { updateEmphasis() } } }
+    var isSelected = false { didSet { if isSelected != oldValue { updateEmphasis(fading: false) } } }
+    private var isHovered = false { didSet { if isHovered != oldValue { updateEmphasis(fading: true) } } }
 
     private let primary: NSTextField
     private let secondary: NSTextField
@@ -306,6 +368,7 @@ private final class SuggestionRow: NSView {
         super.init(frame: .zero)
         setIcon(icon)
         addSubview(iconView)
+        self.primary.wantsLayer = true
         self.primary.font = .systemFont(ofSize: 13)
         self.primary.textColor = .secondaryLabelColor
         self.secondary.font = .systemFont(ofSize: 13)
@@ -338,7 +401,15 @@ private final class SuggestionRow: NSView {
         iconView.contentTintColor = icon === Self.globe ? .tertiaryLabelColor : .secondaryLabelColor
     }
 
-    private func updateEmphasis() {
+    /// The pointer's emphasis fades in and out; the keyboard's is immediate, so arrowing through the
+    /// list keeps pace with the address it fills into the field.
+    private func updateEmphasis(fading: Bool) {
+        if fading, !NSWorkspace.shared.accessibilityDisplayShouldReduceMotion {
+            let fade = CATransition()
+            fade.type = .fade
+            fade.duration = 0.12
+            primary.layer?.add(fade, forKey: "emphasis")
+        }
         primary.textColor = isSelected || isHovered ? .labelColor : .secondaryLabelColor
     }
 
