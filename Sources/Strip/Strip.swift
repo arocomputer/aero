@@ -18,6 +18,8 @@ final class Strip: NSView {
 
     private var pins: [Pin] = []
     private var pills: [Pill] = []
+    /// The pill whose drag is reordering its tab, if any.
+    private weak var dragging: Pill?
     private var entering: [NSView] = []
     private var activeItem: NSView?
     /// What the last animated arrangement was made for; see `update`.
@@ -83,7 +85,18 @@ final class Strip: NSView {
     required init?(coder: NSCoder) { fatalError("not used") }
 
     override var isFlipped: Bool { true }
-    override var mouseDownCanMoveWindow: Bool { true }
+    /// Window dragging is handled here rather than by AppKit's implicit title-bar handling, so it
+    /// stops exactly at the empty strip: a tab or control never doubles as window background.
+    override var mouseDownCanMoveWindow: Bool { false }
+
+    /// Reached only where no tab or control occupies the point; those consume their own events.
+    override func mouseDown(with event: NSEvent) {
+        if event.clickCount >= 2 {
+            window?.performZoom(nil)
+        } else {
+            window?.performDrag(with: event)
+        }
+    }
 
     /// Allows the system's title-bar double-click only when no tab or control occupies the point.
     func allowsWindowZoom(at pointInWindow: NSPoint) -> Bool {
@@ -164,6 +177,15 @@ final class Strip: NSView {
                 }
             }
             pill.onPin = { [weak self, weak tab] in tab.map { self?.controller?.setPinned(true, tab: $0) } }
+            pill.onCopyLink = { [weak self, weak tab] in tab.map { self?.controller?.copyLink(of: $0) } }
+            pill.onDrag = { [weak self, weak pill] location in
+                guard let self, let pill else { return }
+                drag(pill, to: location)
+            }
+            pill.onDragEnd = { [weak self, weak pill] in
+                guard let self, dragging === pill else { return }
+                dragging = nil
+            }
             pill.onSiteInformation = { [weak self, weak tab, weak pill] in
                 guard let tab, let pill else { return }
                 self?.controller?.showSiteInformation(for: tab, relativeTo: pill)
@@ -197,11 +219,54 @@ final class Strip: NSView {
         }
         let arrangement = Arrangement(
             pins: pins.count, pills: pills.count, active: activeItem.map(ObjectIdentifier.init),
+            order: pins.map(ObjectIdentifier.init) + pills.map(ObjectIdentifier.init),
             leading: leadingInset, trailing: trailingInset, width: bounds.width, showsDownloads: showsDownloads)
         if arrangement != arranged || !entering.isEmpty {
             arranged = arrangement
             arrange(animated: bounds.width > 0)
         }
+    }
+
+    /// Reorders the dragged tab as the pointer crosses a neighbor's center, or pulls it out into a
+    /// window of its own once the pointer leaves the strip. `WindowController.move` keeps it inside the
+    /// ordinary range and tells the extension runtime, so a collapsed group or a pinned tab never moves
+    /// across its boundary.
+    private func drag(_ pill: Pill, to locationInWindow: NSPoint) {
+        guard let controller, let tab = pill.tab else { return }
+        dragging = pill
+        guard let from = pills.firstIndex(where: { $0 === pill }) else { return }
+        let point = convert(locationInWindow, from: nil)
+        if point.y > bounds.height + 24, tearOff(tab) {
+            dragging = nil
+            return
+        }
+
+        var destination = from
+        for (index, item) in pills.enumerated() where index != from {
+            if index < from, point.x < item.frame.midX { destination = index; break }
+            if index > from, point.x > item.frame.midX { destination = index }
+        }
+        guard destination != from, let target = pills[destination].tab,
+            let insertion = controller.tabs.firstIndex(where: { $0 === target })
+        else { return }
+        controller.move(tab, to: insertion)
+    }
+
+    /// Pulls a tab out into a fresh window placed under the pointer. Only an ordinary public tab can
+    /// change windows; a private or extension tab has no equivalent window to move to.
+    private func tearOff(_ tab: Tab) -> Bool {
+        guard let controller, !controller.isPrivate, tab.recordsActivity, tab.owner === controller,
+            let app = NSApp.delegate as? AppDelegate
+        else { return false }
+        let size = controller.window?.frame.size ?? NSSize(width: 1280, height: 820)
+        let mouse = NSEvent.mouseLocation
+        var origin = NSPoint(x: mouse.x - size.width / 2, y: mouse.y - size.height)
+        if let visible = (NSScreen.screens.first { $0.frame.contains(mouse) } ?? NSScreen.main)?.visibleFrame {
+            origin.x = min(max(visible.minX, origin.x), visible.maxX - size.width)
+            origin.y = min(max(visible.minY, origin.y), visible.maxY - size.height)
+        }
+        app.openWindow(url: nil, restorePins: false, initialTabs: [tab], focused: true, origin: origin)
+        return true
     }
 
     /// Brings a list of item views in line with `tabs`. A view stays with its tab for life, so a closed
@@ -305,6 +370,8 @@ final class Strip: NSView {
 private struct Arrangement: Equatable {
     let pins: Int, pills: Int
     let active: ObjectIdentifier?
+    /// The item views in display order, so a reorder counts as an arrangement change.
+    let order: [ObjectIdentifier]
     let leading: CGFloat, trailing: CGFloat, width: CGFloat
     let showsDownloads: Bool
 }

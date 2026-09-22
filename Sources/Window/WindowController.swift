@@ -351,10 +351,7 @@ final class WindowController: NSWindowController, NSWindowDelegate, WKWebExtensi
             if active?.webView.isLoading == true { stopLoadingPage(nil) } else { reloadPage(nil) }
         case .togglePin: togglePin(nil)
         case .copyLink:
-            if let url = active?.webView.url {
-                NSPasteboard.general.clearContents()
-                NSPasteboard.general.setString(url.absoluteString, forType: .string)
-            }
+            if let active { copyLink(of: active) }
         case .share:
             if let url = active?.webView.url, let anchor = menuAnchor {
                 NSSharingServicePicker(items: [url]).show(relativeTo: anchor.bounds, of: anchor, preferredEdge: .maxY)
@@ -369,6 +366,13 @@ final class WindowController: NSWindowController, NSWindowDelegate, WKWebExtensi
         case .toggleFullScreen: window?.toggleFullScreen(nil)
         }
         if menuPanel.isPresented { menuPanel.update(state: menuState) }
+    }
+
+    /// Puts a tab's address on the clipboard. Tabs with no page yet have nothing to copy.
+    func copyLink(of tab: Tab) {
+        guard let url = tab.url else { return }
+        NSPasteboard.general.clearContents()
+        NSPasteboard.general.setString(url.absoluteString, forType: .string)
     }
 
     private func dismissOmnibox() {
@@ -435,7 +439,7 @@ final class WindowController: NSWindowController, NSWindowDelegate, WKWebExtensi
         let text = active.webView.url.map(AddressInput.display(for:)) ?? ""
         active.omniboxDraft = text
         active.isOmniboxOpen = true
-        omnibox.present(text: text, overPage: !active.isBlank)
+        omnibox.present(text: text, overPage: !active.isBlank, selectingText: false)
     }
 
     @objc func reloadPage(_ sender: Any?) { active?.reload() }

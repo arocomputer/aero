@@ -37,7 +37,15 @@ final class Pill: NSView, TabItem {
     var onClose: (() -> Void)? { didSet { closeButton.onClick = onClose } }
     var onPin: (() -> Void)?
     var onSiteInformation: (() -> Void)?
+    var onCopyLink: (() -> Void)?
+    /// A press that moves far enough becomes a drag; the strip reorders the tab as `onDrag` reports
+    /// the pointer, and `onDragEnd` finishes the gesture.
+    var onDrag: ((NSPoint) -> Void)?
+    var onDragEnd: (() -> Void)?
     var representsGroup = false { didSet { if representsGroup != oldValue { needsLayout = true } } }
+    /// Where the pointer went down, to tell a click from a drag, and whether the press became one.
+    private var pressOrigin: NSPoint?
+    private var isDragging = false
 
     private let fill = NSView()
     private let iconView = NSImageView()
@@ -137,6 +145,7 @@ final class Pill: NSView, TabItem {
         let menu = NSMenu()
         if !representsGroup && AddressInput.isWeb(tab?.url) {
             menu.addItem(withTitle: "Site Information…", action: #selector(informationClicked), keyEquivalent: "").target = self
+            menu.addItem(withTitle: "Copy Link", action: #selector(copyLinkClicked), keyEquivalent: "").target = self
         }
         if canPin { menu.addItem(withTitle: "Pin Tab", action: #selector(pinClicked), keyEquivalent: "").target = self }
         menu.addItem(withTitle: representsGroup ? "Close Group" : "Close Tab", action: #selector(closeClicked), keyEquivalent: "").target =
@@ -146,11 +155,34 @@ final class Pill: NSView, TabItem {
 
     override func mouseEntered(with event: NSEvent) { isHovered = true }
     override func mouseExited(with event: NSEvent) { isHovered = false }
-    override func mouseDown(with event: NSEvent) { onSelect?() }
+    override func mouseDown(with event: NSEvent) {
+        pressOrigin = event.locationInWindow
+        isDragging = false
+        onSelect?()
+    }
+
+    /// A collapsed group has no single tab to move, so it stays a click.
+    override func mouseDragged(with event: NSEvent) {
+        guard !representsGroup, let origin = pressOrigin else { return }
+        if !isDragging {
+            guard abs(event.locationInWindow.x - origin.x) > 3 || abs(event.locationInWindow.y - origin.y) > 3 else { return }
+            isDragging = true
+        }
+        onDrag?(event.locationInWindow)
+    }
+
+    override func mouseUp(with event: NSEvent) {
+        pressOrigin = nil
+        guard isDragging else { return }
+        isDragging = false
+        onDragEnd?()
+    }
+
     override func otherMouseDown(with event: NSEvent) { onClose?() }
 
     @objc private func pinClicked() { onPin?() }
     @objc private func informationClicked() { onSiteInformation?() }
+    @objc private func copyLinkClicked() { onCopyLink?() }
     @objc private func closeClicked() { onClose?() }
 
     private func updateFill(animated: Bool) {
