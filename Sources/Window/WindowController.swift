@@ -165,6 +165,7 @@ final class WindowController: NSWindowController, NSWindowDelegate, WKWebExtensi
         find.dismiss()
         linkBubble.dismiss()
         let previous = active
+        if let previous, previous.isBlank || previous.isOmniboxOpen { previous.omniboxSnapshot = omnibox.snapshot }
         active?.webView.removeFromSuperview()
         previous?.hiddenSince = Date()
         tab.hiddenSince = nil
@@ -176,7 +177,9 @@ final class WindowController: NSWindowController, NSWindowDelegate, WKWebExtensi
         tab.loadIfPending()
 
         if tab.isBlank || tab.isOmniboxOpen {
-            omnibox.present(text: tab.omniboxDraft, overPage: !tab.isBlank, suggesting: tab.omniboxDraft != address(of: tab))
+            omnibox.present(
+                text: tab.omniboxDraft, overPage: !tab.isBlank, suggesting: tab.omniboxDraft != address(of: tab),
+                restoring: tab.omniboxSnapshot)
         } else {
             omnibox.dismiss()
             window?.makeFirstResponder(tab.webView)
@@ -438,6 +441,7 @@ final class WindowController: NSWindowController, NSWindowDelegate, WKWebExtensi
         linkBubble.dismiss()
         let text = address(of: active)
         active.omniboxDraft = text
+        active.omniboxSnapshot = nil
         active.isOmniboxOpen = true
         omnibox.present(text: text, overPage: !active.isBlank, selectingText: false, suggesting: false)
     }

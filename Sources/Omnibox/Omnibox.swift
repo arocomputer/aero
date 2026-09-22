@@ -16,6 +16,21 @@ final class Omnibox: NSView, NSTextFieldDelegate {
     var onDismiss: (() -> Void)?
     var onTextChange: ((String) -> Void)?
     var onBackgroundChange: (() -> Void)?
+    /// Everything the field shows for one tab, taken as the person switches away, so switching back
+    /// finds the text, its highlight or caret, any inline completion and the chosen row as they were.
+    struct Snapshot {
+        let text: String
+        let typed: String
+        let selection: NSRange
+        let row: Int?
+    }
+
+    /// The field as it stands, or nil when it is not showing.
+    var snapshot: Snapshot? {
+        guard !isHidden, let editor = field.currentEditor() as? NSTextView else { return nil }
+        return Snapshot(text: editor.string, typed: typed, selection: editor.selectedRange(), row: selected)
+    }
+
     var allowsRemoteSuggestions = false { didSet { if !allowsRemoteSuggestions { suggestionTask?.cancel() } } }
     private var suggestionTask: Task<Void, Never>?
 
@@ -83,23 +98,33 @@ final class Omnibox: NSView, NSTextFieldDelegate {
     /// existing address so typing replaces it at once; without it the caret sits after the address.
     /// `suggesting` lists history matching `text`; the page's own address passes false, since matches
     /// for where the person already is only cover the page. The first keystroke brings them back.
-    func present(text: String, overPage: Bool, selectingText: Bool = true, suggesting: Bool = true) {
+    /// `restoring` puts back a `snapshot` taken from this tab, overriding `text` and `selectingText`.
+    func present(
+        text: String, overPage: Bool, selectingText: Bool = true, suggesting: Bool = true, restoring saved: Snapshot? = nil
+    ) {
         suggestionTask?.cancel()
         isOverPage = overPage
         needsDisplay = true
-        field.stringValue = text
+        field.stringValue = saved?.text ?? text
         searchHint.isHidden = true
-        typed = text
-        entries = text.isEmpty || !suggesting ? [] : History.shared.suggestions(for: text)
+        typed = saved?.typed ?? text
+        entries = typed.isEmpty || !suggesting ? [] : History.shared.suggestions(for: typed)
         onTextChange?(typed)
         isHidden = false
-        rebuildRows(animated: false)
+        rebuildRows(select: saved?.row.flatMap { $0 < entries.count ? $0 : nil }, animated: false)
 
         window?.makeFirstResponder(field)
         guard let editor = field.currentEditor() as? NSTextView else { return }
         // The inline completion is a selection; neutral gray keeps it from reading as an error or a link.
         editor.selectedTextAttributes = [.backgroundColor: NSColor.labelColor.withAlphaComponent(0.12)]
-        if !selectingText { editor.setSelectedRange(NSRange(location: (field.stringValue as NSString).length, length: 0)) }
+        let length = (field.stringValue as NSString).length
+        if let range = saved?.selection {
+            let start = min(range.location, length)
+            editor.setSelectedRange(NSRange(location: start, length: min(range.length, length - start)))
+        } else if !selectingText {
+            editor.setSelectedRange(NSRange(location: length, length: 0))
+        }
+        placeSearchHint()
     }
 
     func dismiss() {
