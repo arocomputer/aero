@@ -50,8 +50,9 @@ final class Pill: NSView, TabItem {
     private let fill = NSView()
     private let iconView = NSImageView()
     private let label = NSTextField(labelWithString: "")
-    private let closeButton = StripButton(symbol: "xmark", pointSize: 11)
-    private let infoButton = StripButton(symbol: "info.circle", pointSize: 13, weight: .regular)
+    private let closeButton = StripButton(symbol: "xmark", pointSize: 11, offset: CGPoint(x: 0, y: -0.5))
+    // Both glyphs sit half a point off the image's center at these sizes, measured against the disc.
+    private let infoButton = StripButton(symbol: "info.circle", pointSize: 13, weight: .regular, offset: CGPoint(x: -0.5, y: -0.5))
     private var isHovered = false {
         didSet {
             guard isHovered != oldValue else { return }
