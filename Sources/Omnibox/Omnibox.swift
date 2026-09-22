@@ -1,8 +1,9 @@
 import AppKit
 
 /// The address field with its suggestions, centered over the content area. It is the whole page of a
-/// blank tab, and a dismissible overlay on a loaded one (⌘L). Typing completes inline from history;
-/// ↑/↓ pick a row, Tab accepts the completion, Return navigates, Esc or a click outside dismisses.
+/// blank tab, and a dismissible overlay on a loaded one (⌘L). Suggestions follow what is typed, so the
+/// page's own address opens as the field alone. Typing completes inline from history; ↑/↓ pick a row,
+/// Tab accepts the completion, Return navigates, Esc or a click outside dismisses.
 ///
 /// Nothing here is animated: the field and its list appear, change and leave at once, so what is
 /// typed and what it matches are never a moment behind each other. Suggestions that survive a
@@ -77,14 +78,16 @@ final class Omnibox: NSView, NSTextFieldDelegate {
     /// Shows the field with `text` and takes keyboard focus. `overPage` makes the backdrop transparent
     /// and dismissible; otherwise it is the opaque blank-tab page. `selectingText` highlights the
     /// existing address so typing replaces it at once; without it the caret sits after the address.
-    func present(text: String, overPage: Bool, selectingText: Bool = true) {
+    /// `suggesting` lists history matching `text`; the page's own address passes false, since matches
+    /// for where the person already is only cover the page. The first keystroke brings them back.
+    func present(text: String, overPage: Bool, selectingText: Bool = true, suggesting: Bool = true) {
         suggestionTask?.cancel()
         isOverPage = overPage
         needsDisplay = true
         field.stringValue = text
         searchHint.isHidden = true
         typed = text
-        entries = text.isEmpty ? [] : History.shared.suggestions(for: text)
+        entries = text.isEmpty || !suggesting ? [] : History.shared.suggestions(for: text)
         onTextChange?(typed)
         isHidden = false
         rebuildRows()

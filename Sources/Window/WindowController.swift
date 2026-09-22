@@ -176,7 +176,7 @@ final class WindowController: NSWindowController, NSWindowDelegate, WKWebExtensi
         tab.loadIfPending()
 
         if tab.isBlank || tab.isOmniboxOpen {
-            omnibox.present(text: tab.omniboxDraft, overPage: !tab.isBlank)
+            omnibox.present(text: tab.omniboxDraft, overPage: !tab.isBlank, suggesting: tab.omniboxDraft != address(of: tab))
         } else {
             omnibox.dismiss()
             window?.makeFirstResponder(tab.webView)
@@ -436,11 +436,14 @@ final class WindowController: NSWindowController, NSWindowDelegate, WKWebExtensi
         menuPanel.dismiss()
         find.dismiss()
         linkBubble.dismiss()
-        let text = active.webView.url.map(AddressInput.display(for:)) ?? ""
+        let text = address(of: active)
         active.omniboxDraft = text
         active.isOmniboxOpen = true
-        omnibox.present(text: text, overPage: !active.isBlank, selectingText: false)
+        omnibox.present(text: text, overPage: !active.isBlank, selectingText: false, suggesting: false)
     }
+
+    /// The page's address as the address field shows it; empty before a tab has a page.
+    private func address(of tab: Tab) -> String { tab.webView.url.map(AddressInput.display(for:)) ?? "" }
 
     @objc func reloadPage(_ sender: Any?) { active?.reload() }
     @objc func stopLoadingPage(_ sender: Any?) { active?.webView.stopLoading() }
