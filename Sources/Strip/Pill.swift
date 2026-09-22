@@ -126,8 +126,9 @@ final class Pill: NSView, TabItem {
         let shown = showsInformation
         let x = titleInset + (shown && icon == nil ? 22 : 0)
         let titleFrame = NSRect(x: x, y: 7, width: max(0, bounds.width - x - 28), height: 16)
-        // Two points of padding around the existing glyph slot enlarge the hover disc and hit target.
-        let infoFrame = NSRect(x: icon == nil ? titleInset - 2 + (shown ? 0 : -4) : 8, y: 5, width: 20, height: 20)
+        // Centered on the favicon slot (center 18) whether or not the tab has one, so the disc lines
+        // up with a site icon rather than sitting a couple of points to its right.
+        let infoFrame = NSRect(x: 8, y: 5, width: 20, height: 20)
         let iconCovered = isHovered && closeButton.frame.minX < iconView.frame.maxX + 2
         infoButton.setAccessibilityHidden(!shown)
         NSAnimationContext.runAnimationGroup { context in

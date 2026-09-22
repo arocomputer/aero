@@ -26,8 +26,10 @@ final class Strip: NSView {
     private var arranged: Arrangement?
     private let highlight = Shade(opacity: 0.08, radius: StripMetrics.radius)
     private let separator = Shade(opacity: 0.14, radius: 0)
-    private let backButton = StripButton(symbol: "chevron.backward", pointSize: 14, weight: .medium)
-    private let forwardButton = StripButton(symbol: "chevron.forward", pointSize: 14, weight: .medium)
+    // The two chevron symbols do not share a center: at 14pt their ink sits about 0.5pt left and 1pt
+    // right of the button, so each is nudged back to the middle and the pair reads as one mirrored pair.
+    private let backButton = StripButton(symbol: "chevron.backward", pointSize: 14, weight: .medium, offset: CGPoint(x: 0.5, y: 0))
+    private let forwardButton = StripButton(symbol: "chevron.forward", pointSize: 14, weight: .medium, offset: CGPoint(x: -1, y: 0))
     private let reloadButton = StripButton(symbol: "arrow.clockwise", pointSize: 13, weight: .medium)
     private let plusButton = StripButton(symbol: "plus", pointSize: 13)
     private let downloadsButton = StripButton(symbol: "arrow.down.circle", pointSize: 14, weight: .medium)
@@ -50,7 +52,11 @@ final class Strip: NSView {
         wantsLayer = true
         addSubview(highlight)
 
+        backButton.toolTip = "Back"
+        backButton.setAccessibilityLabel("Back")
         backButton.onClick = { [weak self] in self?.controller?.goBackInHistory(nil) }
+        forwardButton.toolTip = "Forward"
+        forwardButton.setAccessibilityLabel("Forward")
         forwardButton.onClick = { [weak self] in self?.controller?.goForwardInHistory(nil) }
         reloadButton.toolTip = "Reload"
         reloadButton.onClick = { [weak self] in self?.controller?.reloadPage(nil) }
