@@ -38,14 +38,12 @@ final class Pill: NSView, TabItem {
     var onPin: (() -> Void)?
     var onSiteInformation: (() -> Void)?
     var onCopyLink: (() -> Void)?
-    /// A press that moves far enough becomes a drag; the strip reorders the tab as `onDrag` reports
-    /// the pointer, and `onDragEnd` finishes the gesture.
+    /// A press that moves far enough becomes a drag, and `onDrag` follows it to the release, given
+    /// where in the window the press began.
     var onDrag: ((NSPoint) -> Void)?
-    var onDragEnd: (() -> Void)?
     var representsGroup = false { didSet { if representsGroup != oldValue { needsLayout = true } } }
-    /// Where the pointer went down, to tell a click from a drag, and whether the press became one.
+    /// Where the pointer went down, to tell a click from a drag.
     private var pressOrigin: NSPoint?
-    private var isDragging = false
 
     private let fill = NSView()
     private let iconView = NSImageView()
@@ -159,26 +157,19 @@ final class Pill: NSView, TabItem {
     override func mouseExited(with event: NSEvent) { isHovered = false }
     override func mouseDown(with event: NSEvent) {
         pressOrigin = event.locationInWindow
-        isDragging = false
         onSelect?()
     }
 
     /// A collapsed group has no single tab to move, so it stays a click.
     override func mouseDragged(with event: NSEvent) {
-        guard !representsGroup, let origin = pressOrigin else { return }
-        if !isDragging {
-            guard abs(event.locationInWindow.x - origin.x) > 3 || abs(event.locationInWindow.y - origin.y) > 3 else { return }
-            isDragging = true
-        }
-        onDrag?(event.locationInWindow)
+        guard !representsGroup, let origin = pressOrigin,
+            abs(event.locationInWindow.x - origin.x) > 3 || abs(event.locationInWindow.y - origin.y) > 3
+        else { return }
+        pressOrigin = nil
+        onDrag?(origin)
     }
 
-    override func mouseUp(with event: NSEvent) {
-        pressOrigin = nil
-        guard isDragging else { return }
-        isDragging = false
-        onDragEnd?()
-    }
+    override func mouseUp(with event: NSEvent) { pressOrigin = nil }
 
     override func otherMouseDown(with event: NSEvent) { onClose?() }
 

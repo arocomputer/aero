@@ -2,11 +2,12 @@ import AppKit
 
 /// The single strip of chrome, filling the window's titlebar: a hairline after the traffic lights, the
 /// back, forward and reload controls, pinned tabs as site icons or monograms, then tab pills, then a "+" that
-/// shows while the pointer is over the strip. Laid out by hand; empty areas drag the window.
+/// shows while the pointer is over the strip. Laid out by hand; empty areas drag the window, and a tab
+/// dragged along it reorders, leaves for a window of its own, or joins another window's strip.
 /// Changes to the tabs animate: the active highlight slides between items, new ones slide in, the rest make room.
 /// It has no surface of its own: it shows the color along the page's top edge, and its `appearance`
 /// is set light or dark to stay legible on it. See `setTint(_:fading:)`.
-final class Strip: NSView {
+final class Strip: NSControl {
     weak var controller: WindowController?
     /// Space reserved on the left for the traffic lights.
     var leadingInset: CGFloat = 86 { didSet { if leadingInset != oldValue { needsLayout = true } } }
@@ -18,10 +19,12 @@ final class Strip: NSView {
 
     private var pins: [Pin] = []
     private var pills: [Pill] = []
-    /// The pill whose drag is reordering its tab, if any.
-    private weak var dragging: Pill?
     private var entering: [NSView] = []
     private var activeItem: NSView?
+    /// The pill a drag holds under the pointer, which arranging leaves alone, and the slot it will
+    /// settle into when let go.
+    private weak var held: Pill?
+    private var heldSlot = NSRect.zero
     /// What the last animated arrangement was made for; see `update`.
     private var arranged: Arrangement?
     private let highlight = Shade(opacity: 0.08, radius: StripMetrics.radius)
@@ -91,14 +94,19 @@ final class Strip: NSView {
     required init?(coder: NSCoder) { fatalError("not used") }
 
     override var isFlipped: Bool { true }
-    /// Window dragging is handled here rather than by AppKit's implicit title-bar handling, so it
-    /// stops exactly at the empty strip: a tab or control never doubles as window background.
+    /// Keeps the window server from moving the window from anywhere in the strip. The server decides
+    /// on its own, before the app sees a press, from a region AppKit only refreshes when the view tree
+    /// changes shape; tabs slide and reorder without that, so per-tab exclusions went stale and a tab
+    /// dragged the window. Only an enabled `NSControl` that refuses `mouseDownCanMoveWindow` counts,
+    /// hence the superclass. The strip moves the window itself instead, from `mouseDown(with:)`; a
+    /// subview that allows moving, such as a dimmed button, gets AppKit's in-app window drag.
     override var mouseDownCanMoveWindow: Bool { false }
+    override func acceptsFirstMouse(for event: NSEvent?) -> Bool { true }
 
-    /// Reached only where no tab or control occupies the point; those consume their own events.
+    /// Reached only on empty strip, as the title bar would be.
     override func mouseDown(with event: NSEvent) {
         if event.clickCount >= 2 {
-            window?.performZoom(nil)
+            (window as? Window)?.performTitlebarDoubleClick()
         } else {
             window?.performDrag(with: event)
         }
@@ -184,13 +192,9 @@ final class Strip: NSView {
             }
             pill.onPin = { [weak self, weak tab] in tab.map { self?.controller?.setPinned(true, tab: $0) } }
             pill.onCopyLink = { [weak self, weak tab] in tab.map { self?.controller?.copyLink(of: $0) } }
-            pill.onDrag = { [weak self, weak pill] location in
+            pill.onDrag = { [weak self, weak pill] origin in
                 guard let self, let pill else { return }
-                drag(pill, to: location)
-            }
-            pill.onDragEnd = { [weak self, weak pill] in
-                guard let self, dragging === pill else { return }
-                dragging = nil
+                trackDrag(of: pill, grabbedAt: origin)
             }
             pill.onSiteInformation = { [weak self, weak tab, weak pill] in
                 guard let tab, let pill else { return }
@@ -233,24 +237,71 @@ final class Strip: NSView {
         }
     }
 
-    /// Reorders the dragged tab as the pointer crosses a neighbor's center, or pulls it out into a
-    /// window of its own once the pointer leaves the strip. `WindowController.move` keeps it inside the
-    /// ordinary range and tells the extension runtime, so a collapsed group or a pinned tab never moves
-    /// across its boundary.
-    private func drag(_ pill: Pill, to locationInWindow: NSPoint) {
-        guard let controller, let tab = pill.tab else { return }
-        dragging = pill
-        guard let from = pills.firstIndex(where: { $0 === pill }) else { return }
-        let point = convert(locationInWindow, from: nil)
-        if point.y > bounds.height + 24, tearOff(tab) {
-            dragging = nil
-            return
+    /// Follows a tab drag from the pill's first movement to the release, in an event loop of its own
+    /// so the drag can leave this strip and this window. While the pointer stays on a strip the tab
+    /// reorders there; once it leaves, the tab goes into a window that follows the pointer, held where
+    /// it was grabbed, and dropping that window's tab over any other window's strip moves it in.
+    /// `origin` is where the press began, in window coordinates.
+    private func trackDrag(of pill: Pill, grabbedAt origin: NSPoint) {
+        guard let tab = pill.tab else { return }
+        let grabX = convert(origin, from: nil).x - pill.frame.minX
+        var home: Strip? = self
+        var loose: (window: NSWindow, handle: NSPoint)?
+        while let event = NSApp.nextEvent(
+            matching: [.leftMouseDragged, .leftMouseUp], until: .distantFuture, inMode: .eventTracking, dequeue: true),
+            event.type == .leftMouseDragged
+        {
+            let mouse = event.window?.convertPoint(toScreen: event.locationInWindow) ?? event.locationInWindow
+            if let strip = home {
+                // The margin keeps a tab from tearing off as the pointer wobbles along the strip's edge.
+                guard !strip.contains(mouse, margin: 24) else {
+                    strip.slide(tab, to: mouse, grabbedAt: grabX)
+                    continue
+                }
+                strip.letGo()
+                guard let torn = strip.tearOff(tab, grabbedAt: grabX) else { continue }
+                home = nil
+                loose = torn
+            }
+            guard let (window, handle) = loose else { continue }
+            if let target = Strip.dropTarget(at: mouse, excluding: window), target.attach(tab, at: mouse) {
+                home = target
+                loose = nil
+            } else {
+                window.setFrameOrigin(NSPoint(x: mouse.x - handle.x, y: mouse.y - handle.y))
+            }
         }
+        home?.letGo()
+    }
+
+    /// Whether a screen point lies on this strip, or within `margin` of it.
+    private func contains(_ mouse: NSPoint, margin: CGFloat = 0) -> Bool {
+        guard let window else { return false }
+        return bounds.insetBy(dx: -margin, dy: -margin).contains(convert(window.convertPoint(fromScreen: mouse), from: nil))
+    }
+
+    /// Holds the tab's pill under the pointer, `grabX` into it, within the row of tabs, and moves the tab
+    /// into a neighbor's slot as soon as the pill's center enters it, half a tab's travel, so the row
+    /// answers the hand rather than waiting for the pointer to reach the next tab. `WindowController.move`
+    /// keeps the tab inside the ordinary range and tells the extension runtime.
+    private func slide(_ tab: Tab, to mouse: NSPoint, grabbedAt grabX: CGFloat) {
+        guard let controller, let window, let from = pills.firstIndex(where: { $0.tab === tab }) else { return }
+        let pill = pills[from]
+        if held !== pill {
+            letGo()
+            held = pill
+            heldSlot = pill.frame
+            pill.layer?.zPosition = 1
+        }
+        let slots = pills.map { $0 === pill ? heldSlot : $0.frame }
+        let x = convert(window.convertPoint(fromScreen: mouse), from: nil).x - grabX
+        pill.frame.origin.x = min(max(x, slots[0].minX), slots[slots.count - 1].minX)
+        if activeItem === pill { highlight.frame = pill.frame }
 
         var destination = from
-        for (index, item) in pills.enumerated() where index != from {
-            if index < from, point.x < item.frame.midX { destination = index; break }
-            if index > from, point.x > item.frame.midX { destination = index }
+        for (index, slot) in slots.enumerated() where index != from {
+            if index < from, pill.frame.midX < slot.maxX { destination = index; break }
+            if index > from, pill.frame.midX > slot.minX { destination = index }
         }
         guard destination != from, let target = pills[destination].tab,
             let insertion = controller.tabs.firstIndex(where: { $0 === target })
@@ -258,20 +309,51 @@ final class Strip: NSView {
         controller.move(tab, to: insertion)
     }
 
-    /// Pulls a tab out into a fresh window placed under the pointer. Only an ordinary public tab can
-    /// change windows; a private or extension tab has no equivalent window to move to.
-    private func tearOff(_ tab: Tab) -> Bool {
+    /// Releases the held pill into its slot.
+    private func letGo() {
+        guard let pill = held else { return }
+        held = nil
+        pill.layer?.zPosition = 0
+        arrange(animated: true)
+    }
+
+    /// Gives the tab a window of its own to drag: this one when the tab is all it holds, otherwise a new
+    /// one, returned with the point in it that should sit under the pointer, `grabX` into the tab. Only
+    /// an ordinary public tab can change windows; a private or extension tab has nowhere to go.
+    private func tearOff(_ tab: Tab, grabbedAt grabX: CGFloat) -> (window: NSWindow, handle: NSPoint)? {
         guard let controller, !controller.isPrivate, tab.recordsActivity, tab.owner === controller,
             let app = NSApp.delegate as? AppDelegate
-        else { return false }
-        let size = controller.window?.frame.size ?? NSSize(width: 1280, height: 820)
-        let mouse = NSEvent.mouseLocation
-        var origin = NSPoint(x: mouse.x - size.width / 2, y: mouse.y - size.height)
-        if let visible = (NSScreen.screens.first { $0.frame.contains(mouse) } ?? NSScreen.main)?.visibleFrame {
-            origin.x = min(max(visible.minX, origin.x), visible.maxX - size.width)
-            origin.y = min(max(visible.minY, origin.y), visible.maxY - size.height)
+        else { return nil }
+        let torn =
+            controller.tabs.count == 1 ? controller : app.openWindow(url: nil, restorePins: false, initialTabs: [tab], focused: true)
+        guard let window = torn.window else { return nil }
+        // Measured in the turn the window was shown, and moved before it draws, so it never appears elsewhere.
+        torn.strip.layoutSubtreeIfNeeded()
+        let pill = torn.strip.pills.first { $0.tab === tab }?.frame ?? .zero
+        return (window, torn.strip.convert(NSPoint(x: pill.minX + min(grabX, pill.width), y: pill.midY), to: nil))
+    }
+
+    /// The strip of the frontmost browser window under a screen point, skipping the window being
+    /// dragged. Another app's window or a panel in front hides the strips behind it.
+    private static func dropTarget(at mouse: NSPoint, excluding dragged: NSWindow) -> Strip? {
+        for window in NSApp.orderedWindows where window !== dragged && window.isVisible && window.frame.contains(mouse) {
+            guard let strip = (window.windowController as? WindowController)?.strip, strip.contains(mouse) else { return nil }
+            return strip
         }
-        app.openWindow(url: nil, restorePins: false, initialTabs: [tab], focused: true, origin: origin)
+        return nil
+    }
+
+    /// Takes a tab from another window in at the pointer, selects it and brings this window forward.
+    /// A private window refuses it.
+    private func attach(_ tab: Tab, at mouse: NSPoint) -> Bool {
+        guard let controller, let window else { return false }
+        let x = convert(window.convertPoint(fromScreen: mouse), from: nil).x
+        let ordinary = controller.tabs.filter(\.recordsActivity)
+        let next = pills.first { $0.frame.midX > x }?.tab
+        let index = next.flatMap { next in ordinary.firstIndex { $0 === next } } ?? ordinary.count
+        guard controller.transfer(tab, to: index) else { return false }
+        controller.select(tab)
+        window.makeKeyAndOrderFront(nil)
         return true
     }
 
@@ -340,7 +422,10 @@ final class Strip: NSView {
             trailingX -= StripMetrics.itemHeight + 4
             targets.append((downloadsButton, NSRect(x: trailingX, y: y, width: StripMetrics.itemHeight, height: StripMetrics.itemHeight)))
         }
-        let highlightTarget = targets.first { $0.0 === activeItem }?.1 ?? .zero
+        if let held, let slot = targets.firstIndex(where: { $0.0 === held }) {
+            heldSlot = targets.remove(at: slot).1
+        }
+        let highlightTarget = activeItem === held ? highlight.frame : targets.first { $0.0 === activeItem }?.1 ?? .zero
 
         guard animated else {
             for (view, frame) in targets + [(highlight, highlightTarget)] where view.frame != frame { view.frame = frame }

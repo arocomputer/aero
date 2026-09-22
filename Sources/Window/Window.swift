@@ -25,6 +25,18 @@ final class Window: NSWindow {
         super.performZoom(sender)
     }
 
+    /// Does what System Settings asks of a title-bar double-click, for the strip, which keeps presses
+    /// from reaching the title bar. Fill has no public API, so it zooms. A first click that landed on a
+    /// tab or control never counts.
+    func performTitlebarDoubleClick() {
+        guard firstClickAllowsZoom else { return }
+        switch UserDefaults.standard.string(forKey: "AppleActionOnDoubleClick") {
+        case "Minimize": performMiniaturize(nil)
+        case "None": break
+        default: performZoom(nil)
+        }
+    }
+
     override func performKeyEquivalent(with event: NSEvent) -> Bool {
         let modifiers = event.modifierFlags.intersection(.deviceIndependentFlagsMask)
         if modifiers == .command,

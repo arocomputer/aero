@@ -172,11 +172,10 @@ final class AppDelegate: NSObject, NSApplicationDelegate, ASWebAuthenticationSes
     }
 
     /// Registers tabs before presentation; extension windows can omit pins and transfer live tabs without taking focus.
-    /// `origin`, when given, places the window before it is shown, so a tab torn out of a strip does not flash at its center.
     @discardableResult
     func openWindow(
         url: URL?, isPrivate: Bool = false, configuration: WKWebViewConfiguration? = nil, windowType: WKWebExtension.WindowType = .normal,
-        restorePins: Bool = true, initialTabs: [Tab] = [], focused: Bool = true, origin: NSPoint? = nil
+        restorePins: Bool = true, initialTabs: [Tab] = [], focused: Bool = true
     ) -> WindowController {
         let controller = WindowController(
             url: url, isPrivate: isPrivate, configuration: configuration, windowType: windowType,
@@ -188,7 +187,6 @@ final class AppDelegate: NSObject, NSApplicationDelegate, ASWebAuthenticationSes
         windows.append(controller)
         controller.registerWithExtensions()
         for (index, tab) in initialTabs.enumerated() { controller.transfer(tab, to: index) }
-        if let origin { controller.window?.setFrameOrigin(origin) }
         if focused { controller.window?.makeKeyAndOrderFront(nil) } else { controller.window?.orderBack(nil) }
         return controller
     }
