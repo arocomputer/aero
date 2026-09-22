@@ -73,7 +73,8 @@ falls back to a plain `.icns` of the Default look. `./x app` covers the `actool`
 - `AERO_LOG=tint,sleep ./x dev` turns on a commentary from the parts that decide something
   invisible; `./x log` follows it. The channels are in `Sources/App/Log.swift`.
 - `./x shot` lives in `Tests/Window/Shot.swift` rather than the app, so the shipping browser
-  cannot be asked to render a page to a file. It uses a private window without saved pins.
+  cannot be asked to render a page to a file. Web pages use a private window without saved pins;
+  `./x shot new-tab` captures an unloaded native blank tab, also without saved pins.
 
 ## Where things live
 

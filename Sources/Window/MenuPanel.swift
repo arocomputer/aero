@@ -88,11 +88,15 @@ final class MenuPanel: NSView {
         scroll.borderType = .noBorder
         scroll.drawsBackground = false
         scroll.autohidesScrollers = true
+        // AppKit can reserve scrollbar space after layout; keep the rows inside that narrower viewport.
+        content.autoresizingMask = .width
         scroll.documentView = content
         card.addSubview(scroll)
 
-        groups.flatMap { $0 }.forEach(content.addSubview)
-        separators.forEach(content.addSubview)
+        (groups.flatMap { $0 } + separators).forEach {
+            $0.autoresizingMask = .width
+            content.addSubview($0)
+        }
 
         newTab.onClick = { [weak self] in self?.choose(.newTab) }
         newWindow.onClick = { [weak self] in self?.choose(.newWindow) }
@@ -174,22 +178,28 @@ final class MenuPanel: NSView {
         super.layout()
         let width: CGFloat = 300
         let x = bounds.width - width - trailingInset
-        let menuHeight = groups.flatMap { $0 }.reduce(CGFloat(14 + separators.count * 12)) { $0 + ($1 === zoom ? 38 : 32) }
+        // Leave the last hover highlight clear of the card's rounded bottom, including when scrolled to the end.
+        let topInset: CGFloat = 7
+        let bottomInset: CGFloat = 19
+        let menuHeight = groups.flatMap { $0 }.reduce(topInset + bottomInset + CGFloat(separators.count * 12)) {
+            $0 + ($1 === zoom ? 38 : 32)
+        }
         let height = max(180, min(menuHeight, bounds.height - 72))
         card.frame = NSRect(x: x, y: 58, width: width, height: height)
         scroll.frame = card.bounds
         scroll.hasVerticalScroller = height < menuHeight
-        content.frame = NSRect(x: 0, y: 0, width: width, height: menuHeight)
+        let contentWidth = scroll.contentSize.width
+        content.frame = NSRect(x: 0, y: 0, width: contentWidth, height: menuHeight)
 
-        var y: CGFloat = 7
+        var y = topInset
         for (index, rows) in groups.enumerated() {
             for row in rows {
                 let rowHeight: CGFloat = row === zoom ? 38 : 32
-                row.frame = NSRect(x: 6, y: y, width: width - 12, height: rowHeight)
+                row.frame = NSRect(x: 6, y: y, width: contentWidth - 12, height: rowHeight)
                 y += rowHeight
             }
             if index < separators.count {
-                separators[index].frame = NSRect(x: 12, y: y + 5, width: width - 24, height: 1)
+                separators[index].frame = NSRect(x: 12, y: y + 5, width: contentWidth - 24, height: 1)
                 y += 12
             }
         }

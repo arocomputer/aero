@@ -13,6 +13,7 @@ import WebKit
 /// is no flag that makes Aero render a page and write a file on someone else's say-so.
 ///
 /// `./x shot [url] [file.png] [seconds]`, and it prints the file's path when it is written.
+/// Use `new-tab` for the native blank page and `AERO_SHOT_APPEARANCE=light|dark` to choose its appearance.
 ///
 /// What it captures and what it cannot: the window's content — the strip and the page under it — at
 /// 2x. The traffic lights belong to the system's titlebar, which is not part of the content view, so
@@ -23,16 +24,27 @@ func windowShot() async throws {
     let environment = ProcessInfo.processInfo.environment
     let address = environment["AERO_SHOT_URL"] ?? "about:blank"
     let explicit = URL(string: address)
-    let url = try #require(
-        explicit?.scheme == "aero" ? explicit : AddressInput.url(for: address), "AERO_SHOT_URL is not an address: \(address)")
+    let isBlank = address == "new-tab"
+    let url =
+        isBlank
+        ? nil
+        : try #require(
+            explicit?.scheme == "aero" ? explicit : AddressInput.url(for: address), "AERO_SHOT_URL is not an address: \(address)")
     let output = URL(fileURLWithPath: environment["AERO_SHOT_OUTPUT"] ?? "build/shot.png")
     let settle = Double(environment["AERO_SHOT_SETTLE"] ?? "") ?? 4
     let size = shotSize(environment["AERO_SHOT_SIZE"])
 
-    // Ephemeral browsing keeps captures out of history and uses neither saved cookies nor pins.
-    let controller = WindowController(
-        isPrivate: true, configuration: Tab.configuration(ephemeral: true), restorePins: false)
+    // Native blank tabs load nothing; page captures use ephemeral browsing without saved cookies or pins.
+    let controller =
+        isBlank
+        ? WindowController(restorePins: false, startsEmpty: true)
+        : WindowController(
+            isPrivate: true, configuration: Tab.configuration(ephemeral: true), restorePins: false)
+    if isBlank { controller.openTab(useNewTabOverride: false) }
     let window = try #require(controller.window)
+    if let appearance = environment["AERO_SHOT_APPEARANCE"] {
+        window.appearance = NSAppearance(named: appearance == "dark" ? .darkAqua : .aqua)
+    }
     window.setContentSize(size)
     let tab = try #require(controller.active)
     // The page is never on screen, so it counts as hidden: the script would hold its follow-up reads
@@ -42,7 +54,7 @@ func windowShot() async throws {
         WKUserScript(
             source: "Object.defineProperty(document, 'hidden', { get: () => false })",
             injectionTime: .atDocumentStart, forMainFrameOnly: true, in: .defaultClient))
-    controller.navigate(to: url)
+    if let url { controller.navigate(to: url) }
 
     let root = try #require(window.contentView)
     for _ in 0..<600 where tab.webView.isLoading {
@@ -56,11 +68,12 @@ func windowShot() async throws {
     root.display()
     CATransaction.flush()
 
-    let picture = try #require(await capture(window: window, page: tab.webView), "the window could not be pictured")
+    let picture = try #require(await capture(window: window, page: isBlank ? nil : tab.webView), "the window could not be pictured")
     try FileManager.default.createDirectory(
         at: output.deletingLastPathComponent(), withIntermediateDirectories: true)
     try #require(picture.representation(using: .png, properties: [:])).write(to: output)
-    print("SHOT \(output.path) \(Int(size.width))x\(Int(size.height)) strip \(describe(tab.tint))")
+    let stripColor = controller.strip.layer?.backgroundColor.flatMap { NSColor(cgColor: $0) }
+    print("SHOT \(output.path) \(Int(size.width))x\(Int(size.height)) strip \(describe(stripColor))")
 }
 
 /// "1280x820" from `AERO_SHOT_SIZE`, or the window size Aero opens with.
@@ -79,7 +92,7 @@ private func describe(_ color: NSColor?) -> String {
 /// Draws the window's chrome and its page into one image. The chrome is a layer tree — the strip shows
 /// its color by setting one, so drawing the views would miss it — and the page renders in its own
 /// process, which no layer of ours holds, so WebKit is asked for it separately and it goes on top.
-@MainActor private func capture(window: NSWindow, page: WKWebView) async -> NSBitmapImageRep? {
+@MainActor private func capture(window: NSWindow, page: WKWebView?) async -> NSBitmapImageRep? {
     guard let root = window.contentView else { return nil }
     root.wantsLayer = true
     let size = root.bounds.size
@@ -92,12 +105,14 @@ private func describe(_ color: NSColor?) -> String {
     else { return nil }
     rep.size = size
 
-    let pageImage = try? await page.takeSnapshot(configuration: nil)
+    let pageImage = try? await page?.takeSnapshot(configuration: nil)
 
     NSGraphicsContext.saveGraphicsState()
     defer { NSGraphicsContext.restoreGraphicsState() }
     guard let context = NSGraphicsContext(bitmapImageRep: rep) else { return nil }
     NSGraphicsContext.current = context
+    window.backgroundColor.setFill()
+    NSRect(origin: .zero, size: size).fill()
     // The window's layers are geometry-flipped, the way the views above them are, so the chrome is
     // drawn into a context turned the same way up. AppKit's own drawing below is not.
     context.cgContext.saveGState()
@@ -106,7 +121,9 @@ private func describe(_ color: NSColor?) -> String {
     root.layer?.render(in: context.cgContext)
     context.cgContext.restoreGState()
     // The page's own frame, in the bottom-left coordinates AppKit draws in.
-    let frame = page.convert(page.bounds, to: root)
-    pageImage?.draw(in: NSRect(x: frame.minX, y: size.height - frame.maxY, width: frame.width, height: frame.height))
+    if let page {
+        let frame = page.convert(page.bounds, to: root)
+        pageImage?.draw(in: NSRect(x: frame.minX, y: size.height - frame.maxY, width: frame.width, height: frame.height))
+    }
     return rep
 }

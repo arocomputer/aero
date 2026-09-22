@@ -11,6 +11,7 @@ final class Omnibox: NSView, NSTextFieldDelegate {
     var onNavigate: ((URL) -> Void)?
     var onDismiss: (() -> Void)?
     var onTextChange: ((String) -> Void)?
+    var onBackgroundChange: (() -> Void)?
     var allowsRemoteSuggestions = false { didSet { if !allowsRemoteSuggestions { suggestionTask?.cancel() } } }
     private var suggestionTask: Task<Void, Never>?
 
@@ -59,8 +60,18 @@ final class Omnibox: NSView, NSTextFieldDelegate {
     override var isFlipped: Bool { true }
     override var wantsUpdateLayer: Bool { true }
 
+    /// The native blank page's background, resolved in its own appearance for the strip to share.
+    var pageBackground: NSColor {
+        var color = NSColor.textBackgroundColor
+        effectiveAppearance.performAsCurrentDrawingAppearance {
+            color = NSColor(cgColor: NSColor.textBackgroundColor.cgColor) ?? color
+        }
+        return color
+    }
+
     override func updateLayer() {
-        layer?.backgroundColor = isOverPage ? nil : NSColor.textBackgroundColor.cgColor
+        layer?.backgroundColor = isOverPage ? nil : pageBackground.cgColor
+        if !isOverPage { onBackgroundChange?() }
     }
 
     /// Shows the field with `text` selected and takes keyboard focus. `overPage` makes the backdrop
