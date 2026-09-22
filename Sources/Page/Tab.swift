@@ -18,6 +18,8 @@ final class Tab: NSObject, WKNavigationDelegate, WKUIDelegate, WKWebExtensionTab
     private(set) var isBlank: Bool
     /// Text left unfinished in this tab's address field. The window reuses one field across tabs.
     var omniboxDraft = ""
+    /// The address field exactly as it was when this tab was last switched away from; see `Omnibox.Snapshot`.
+    var omniboxSnapshot: Omnibox.Snapshot?
     /// Whether this tab should show the address field when selected.
     var isOmniboxOpen: Bool
     private var observations: [NSKeyValueObservation] = []
@@ -434,6 +436,7 @@ final class Tab: NSObject, WKNavigationDelegate, WKUIDelegate, WKWebExtensionTab
         isBlank = false
         isOmniboxOpen = false
         omniboxDraft = ""
+        omniboxSnapshot = nil
         webView.interactionState = state
         changed()
     }
@@ -464,6 +467,7 @@ final class Tab: NSObject, WKNavigationDelegate, WKUIDelegate, WKWebExtensionTab
         isBlank = false
         isOmniboxOpen = false
         omniboxDraft = ""
+        omniboxSnapshot = nil
         failedProtectedRequest = nil
         webView.load(request)
     }
