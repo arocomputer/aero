@@ -34,7 +34,7 @@ final class Strip: NSControl {
     private let backButton = StripButton(symbol: "chevron.backward", pointSize: 14, weight: .medium, offset: CGPoint(x: 0.5, y: 0))
     private let forwardButton = StripButton(symbol: "chevron.forward", pointSize: 14, weight: .medium, offset: CGPoint(x: -1, y: 0))
     private let reloadButton = StripButton(symbol: "arrow.clockwise", pointSize: 13, weight: .medium)
-    private let plusButton = StripButton(symbol: "plus", pointSize: 13)
+    private let plusButton = StripButton(symbol: "plus", pointSize: 13, discFillsButton: true)
     private let downloadsButton = StripButton(symbol: "arrow.down.circle", pointSize: 14, weight: .medium)
     private let menuButton = StripButton(symbol: "ellipsis", pointSize: 15, weight: .bold)
     private let privateLabel = NSTextField(labelWithString: "Private")
